@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Micro-AI: Steering Behaviors</title>
+    <style>
+      body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
+      #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; pointer-events: none; }
+      .controls { margin-top: 10px; pointer-events: auto; }
+      button { cursor: pointer; padding: 5px 10px; margin-right: 5px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; }
+      button.active { background: #4CAF50; border-color: #4CAF50; }
+      button:hover { background: #555; }
+    </style>
+  </head>
+  <body>
+    <div id="error-display" style="display: none; position: fixed; top: 0; left: 0; width: 100%; background: red; color: white; padding: 20px; z-index: 9999; font-family: monospace; white-space: pre-wrap;"></div>
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        const el = document.getElementById('error-display');
+        el.style.display = 'block';
+        el.textContent += `Error: ${message}\nSource: ${source}:${lineno}:${colno}\n\n`;
+      };
+      window.addEventListener('unhandledrejection', function(event) {
+        const el = document.getElementById('error-display');
+        el.style.display = 'block';
+        el.textContent += `Promise Rejection: ${event.reason}\n\n`;
+      });
+    </script>
+    <div id="ui">
+      <h1>Micro-AI Survival</h1>
+      <div><b>WASD</b> to Move. <b>Auto-Shoots</b> at Mouse. <b>Right Click</b> to Rotate Camera.</div>
+      
+      <div style="margin-top: 15px; display: flex; gap: 15px; font-size: 14px;">
+        <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; background: red; display: inline-block; margin-right: 5px;"></span>Chase</div>
+        <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; background: yellow; display: inline-block; margin-right: 5px;"></span>Orbit</div>
+        <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; background: lime; display: inline-block; margin-right: 5px;"></span>Wander</div>
+        <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; background: #aa00ff; display: inline-block; margin-right: 5px;"></span>Flee</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
