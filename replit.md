@@ -63,8 +63,21 @@ The project is configured to run on port 5000 with Vite dev server.
 - Host verification disabled for Replit proxy
 - Hot module replacement enabled
 
+## Deployment
+
+This project is configured for **Static Deployment** on Replit:
+- **Build Command**: `npm run build` (creates optimized production build)
+- **Output Directory**: `micro-ai-demo/dist`
+- **Deployment Type**: Static (CDN-optimized, no server required)
+
+To deploy:
+1. Click "Publish" in the workspace header
+2. The app will automatically build and deploy the static files
+3. Your game will be served via Replit's CDN
+
 ## Recent Changes
 - **2024-11-28**: Initial Replit setup
-  - Added vite.config.js for Replit environment
-  - Configured workflow on port 5000
+  - Added vite.config.js for Replit environment (0.0.0.0:5000, allowedHosts: true)
+  - Configured workflow on port 5000 with webview output
   - Added .gitignore for Node.js
+  - Configured static deployment with build command and dist output

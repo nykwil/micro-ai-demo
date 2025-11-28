@@ -32,3 +32,13 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 33307
+externalPort = 3000
+
+[deployment]
+deploymentTarget = "static"
+run = ["bash", "-c", "cd micro-ai-demo && npx vite preview --host 0.0.0.0 --port 5000"]
+build = ["bash", "-c", "cd micro-ai-demo && npm run build"]
+publicDir = "micro-ai-demo/dist"
