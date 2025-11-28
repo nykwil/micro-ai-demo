@@ -34,11 +34,21 @@ This is a wave-based survival shooter where you control a player character fight
 
 ## Game Features
 
-### Player Controls
-- **WASD**: Movement
-- **Mouse**: Aim direction (auto-fires)
-- **Right Click**: Rotate camera
-- **Autoplay Toggle**: Enable/disable AI-controlled player
+### Controls
+
+#### Desktop
+- **WASD**: Movement (when Auto-Move is OFF)
+- **Mouse**: Aim direction (when Auto-Aim is OFF)
+- Auto-fires at aim position
+
+#### Mobile (Touch)
+- **Touch anywhere**: Aim at that position (when Auto-Aim is OFF)
+- **Auto-Move**: ON by default - player automatically kites enemies
+- **Auto-Aim**: OFF by default - tap where you want to shoot
+
+### Control Options
+- **Auto-Move Toggle**: Enables AI-controlled movement (kiting, dodging)
+- **Auto-Aim Toggle**: Enables automatic targeting of nearest enemy
 
 ### Enemy AI States
 - **Chase (Red)**: Aggressive pursuit of player
@@ -75,6 +85,17 @@ To deploy:
 3. Your game will be served via Replit's CDN
 
 ## Recent Changes
+- **2024-11-28**: Mobile optimization for vertical gameplay
+  - Removed OrbitControls - camera now automatically follows player
+  - Split autoplay into separate Auto-Aim and Auto-Move toggles
+  - Added touch controls for mobile aiming
+  - Redesigned UI for vertical mobile layout (centered HUD, bottom controls)
+  - Upgrade cards now display vertically for better mobile UX
+  - Auto-Move enabled by default for mobile-friendly experience
+- **2024-11-28**: Fixed enemy removal bug
+  - Enemies now properly disappear when killed
+  - Added break statement in collision loop to prevent index corruption
+  - Added geometry/material disposal to prevent memory leaks
 - **2024-11-28**: Moved project files to root directory for simpler deployment
   - Simplified project structure (no subdirectory)
   - Updated deployment configuration
