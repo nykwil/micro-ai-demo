@@ -66,9 +66,14 @@ The project is configured to run on port 5000 with Vite dev server.
 ## Deployment
 
 This project is configured for **Static Deployment** on Replit:
-- **Build Command**: `npm run build` (creates optimized production build)
+- **Build Script**: `./build.sh` (installs dependencies and builds production files)
 - **Output Directory**: `micro-ai-demo/dist`
 - **Deployment Type**: Static (CDN-optimized, no server required)
+
+The build script automatically:
+1. Changes to the `micro-ai-demo` directory
+2. Installs npm dependencies
+3. Runs the Vite production build
 
 To deploy:
 1. Click "Publish" in the workspace header

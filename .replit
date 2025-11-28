@@ -33,11 +33,7 @@ outputType = "webview"
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-localPort = 33307
-externalPort = 3000
-
 [deployment]
 deploymentTarget = "static"
-build = ["bash", "-c", "cd micro-ai-demo && npm install && npm run build"]
+build = ["./build.sh"]
 publicDir = "micro-ai-demo/dist"
