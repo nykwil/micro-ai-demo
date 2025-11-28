@@ -46,9 +46,9 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.mouseButtons = {
-	LEFT: null, 
-	MIDDLE: THREE.MOUSE.DOLLY,
-	RIGHT: THREE.MOUSE.ROTATE
+        LEFT: null, 
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE
 };
 
 // --- Lights ---
@@ -516,71 +516,36 @@ function animate() {
     }
 
         for (let j = bullets.length - 1; j >= 0; j--) {
-
             const b = bullets[j];
 
             if (b.checkCollision(agent)) {
-
-                
-
                 const knock = b.velocity.clone().normalize().multiplyScalar(b.knockback);
-
                 const dead = agent.takeDamage(b.damage, knock);
 
-                
-
                 if (b.pierceCount > 0) {
-
-                    b.pierceCount--; // Decrement pierce
-
+                    b.pierceCount--;
                 } else {
-
-                    b.isDead = true; // Mark for actual removal if no pierce left
-
+                    b.isDead = true;
                 }
-
-                
 
                 if (dead) {
-
                     scene.remove(agent.mesh);
-
+                    if (agent.mesh.geometry) agent.mesh.geometry.dispose();
+                    if (agent.mesh.material) agent.mesh.material.dispose();
                     agents.splice(i, 1);
-
-                    aiManager.unregister(agent); 
-
-    
-
-                    // Vampirism check (only if agent actually died)
+                    aiManager.unregister(agent);
+                    activeAgents--;
 
                     if (player.stats.lifestealChance > 0 && Math.random() < player.stats.lifestealChance) {
-
                         health = Math.min(100, health + player.stats.lifestealAmount);
-
                         updateHUD();
-
                     }
-
+                    break;
                 }
 
-                
-
-                // If bullet is consumed (no pierce left AND died on contact), remove it.
-
-                // If it has pierce, it continues.
-
-                if (b.isDead && b.pierceCount === 0) {
-
-                    // The actual removal (kill() call) happens in the bullets update loop
-
-                    // We just mark it here.
-
-                }
-
-                // Break only if bullet is fully consumed by this collision (no pierce left)
-            if (b.isDead && b.pierceCount === 0) break; // Bullet is fully spent
+                if (b.isDead && b.pierceCount === 0) break;
+            }
         }
-    }
   }
 
   if(health > 30 && gameState === 'PLAYING') hud.style.color = 'white';
