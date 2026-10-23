@@ -44,6 +44,8 @@ Going through a portal is one of five trips. Floor → floor is inactive, and XY
 
 Planned for all of them: a short (~0.4 s) take-over with a portal animation, during which the player has no control.
 
+The full matrix, every entry face × exit face × mode using box face names (L/R, top, bottom, back), is in [docs/portal-transitions.md](docs/portal-transitions.md).
+
 ## Architecture (`src/core`, no DOM dependencies)
 
 | Module | Plan section |
