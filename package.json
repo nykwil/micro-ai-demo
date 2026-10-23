@@ -1,20 +1,19 @@
 {
-  "name": "micro-ai-demo",
+  "name": "dual-mode-portal-lab",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "generate": "node scripts/generate.js"
   },
   "devDependencies": {
     "vite": "npm:rolldown-vite@7.2.5"
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.5"
-  },
-  "dependencies": {
-    "three": "^0.181.2"
   }
 }

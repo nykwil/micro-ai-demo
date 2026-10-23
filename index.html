@@ -2,104 +2,122 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <title>Micro-AI Survival</title>
-    <style>
-      * { box-sizing: border-box; }
-      html, body { 
-        margin: 0; 
-        padding: 0;
-        overflow: hidden; 
-        background-color: #111; 
-        color: white; 
-        font-family: sans-serif;
-        touch-action: none;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        user-select: none;
-        height: 100%;
-        width: 100%;
-      }
-      #ui { 
-        position: absolute; 
-        top: 40px; 
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10; 
-        background: rgba(0,0,0,0.7); 
-        padding: 8px 16px; 
-        border-radius: 8px; 
-        pointer-events: none;
-        text-align: center;
-        max-width: 90%;
-      }
-      #ui h1 {
-        font-size: 16px;
-        margin: 0 0 4px 0;
-      }
-      #ui .instructions {
-        font-size: 11px;
-        opacity: 0.8;
-      }
-      .legend { 
-        margin-top: 8px; 
-        display: flex; 
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 8px; 
-        font-size: 10px; 
-      }
-      .legend-item {
-        display: flex;
-        align-items: center;
-      }
-      .legend-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 4px;
-      }
-      button { 
-        cursor: pointer; 
-        padding: 12px 16px; 
-        background: #444; 
-        border: none; 
-        color: white; 
-        border-radius: 8px;
-        font-size: 14px;
-        touch-action: manipulation;
-      }
-      button:active { 
-        transform: scale(0.95);
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dual-Mode Portal Lab</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
   <body>
-    <div id="error-display" style="display: none; position: fixed; top: 0; left: 0; width: 100%; background: red; color: white; padding: 20px; z-index: 9999; font-family: monospace; white-space: pre-wrap;"></div>
-    <script>
-      window.onerror = function(message, source, lineno, colno, error) {
-        const el = document.getElementById('error-display');
-        el.style.display = 'block';
-        el.textContent += `Error: ${message}\nSource: ${source}:${lineno}:${colno}\n\n`;
-      };
-      window.addEventListener('unhandledrejection', function(event) {
-        const el = document.getElementById('error-display');
-        el.style.display = 'block';
-        el.textContent += `Promise Rejection: ${event.reason}\n\n`;
-      });
-    </script>
-    <div id="ui">
-      <h1>Micro-AI Survival</h1>
-      <div class="instructions">Touch to aim. Auto-Move enabled by default.</div>
-      <div class="legend">
-        <div class="legend-item"><span class="legend-dot" style="background: red;"></span>Chase</div>
-        <div class="legend-item"><span class="legend-dot" style="background: yellow;"></span>Orbit</div>
-        <div class="legend-item"><span class="legend-dot" style="background: lime;"></span>Wander</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #aa00ff;"></span>Flee</div>
-      </div>
-    </div>
-    <script type="module" src="/src/main.js"></script>
+    <header>
+      <h1>Dual-Mode Portal Lab</h1>
+      <nav id="tabs">
+        <button data-tab="edit" class="active">Edit</button>
+        <button data-tab="solve">Solve</button>
+        <button data-tab="play">Play</button>
+        <button data-tab="generate">Generate</button>
+      </nav>
+      <div id="levelName"></div>
+    </header>
+    <main>
+      <section id="stage">
+        <canvas id="canvas"></canvas>
+        <div id="overlays">
+          <label><input type="checkbox" data-ov="regions" checked /> Zelda regions</label>
+          <label><input type="checkbox" data-ov="platforms" checked /> Platforms</label>
+          <label><input type="checkbox" data-ov="jumps" /> Jump connections</label>
+          <label><input type="checkbox" data-ov="launches" /> Portal launches</label>
+          <label><input type="checkbox" data-ov="ids" /> Socket ids</label>
+        </div>
+        <div id="status"></div>
+      </section>
+
+      <aside id="panel">
+        <div class="tab" id="tab-edit">
+          <h2>Paint</h2>
+          <div id="tools" class="tools">
+            <button data-tool="floor" class="active">Floor</button>
+            <button data-tool="solid">Solid</button>
+            <button data-tool="pit">Pit</button>
+            <button data-tool="exit">Exit</button>
+            <button data-tool="startA">Start A</button>
+            <button data-tool="startB">Start B</button>
+            <button data-tool="floorSocket">Floor socket</button>
+            <button data-tool="wallSocket">Wall socket</button>
+          </div>
+          <p class="hint">Wall socket: click the left or right half of a solid tile to toggle a socket on that face. Ctrl+Z undoes.</p>
+          <div class="row">
+            <select id="samples"></select>
+            <button id="newLevel">New 12×12</button>
+          </div>
+          <div class="row">
+            <button id="exportJson">Export JSON</button>
+            <label class="file">Import JSON<input type="file" id="importJson" accept=".json,application/json" /></label>
+            <button id="copyAscii">Copy ASCII</button>
+          </div>
+          <h2>Geometry-change report</h2>
+          <pre id="report">Edit the level to see how reachability changes.</pre>
+          <h2>Analysis</h2>
+          <pre id="analysisStats"></pre>
+          <h2>Jump connections</h2>
+          <div id="edgeList" class="list"></div>
+        </div>
+
+        <div class="tab hidden" id="tab-solve">
+          <div class="row">
+            <button id="replayBtn">Replay with physics</button>
+            <button id="repairBtn">Find shortcut fix</button>
+          </div>
+          <pre id="solveSummary"></pre>
+          <h2>Shortest solution</h2>
+          <ol id="solution" class="list"></ol>
+          <h2>Metrics</h2>
+          <table id="metrics"></table>
+          <div id="intended"></div>
+        </div>
+
+        <div class="tab hidden" id="tab-play">
+          <div class="row"><button id="restart">Restart (R)</button></div>
+          <pre id="playInfo"></pre>
+          <h2>Controls</h2>
+          <table class="controls">
+            <tr><th></th><th>Move</th><th>Jump (Mario)</th><th>Place portal</th></tr>
+            <tr><td class="a">A</td><td>WASD</td><td>W / Space</td><td>E</td></tr>
+            <tr><td class="b">B</td><td>Arrows</td><td>Up</td><td>Enter or /</td></tr>
+            <tr><td>Pad</td><td>Left stick = A, right stick = B</td><td>Stick up, LT / RT</td><td>LB / RB</td></tr>
+          </table>
+          <p class="hint">Stand at a socket (in front of a wall socket, or on a floor socket) to place your portal. Floor → wall switches to Mario mode, wall → floor back to Zelda mode, wall → wall keeps your mode. Get both characters onto the exit.</p>
+        </div>
+
+        <div class="tab hidden" id="tab-generate">
+          <h2>Targets</h2>
+          <div class="grid">
+            <label>Min actions <input id="gMinLo" type="number" value="8" min="1" /></label>
+            <label>Max actions <input id="gMinHi" type="number" value="14" min="1" /></label>
+            <label>Physics switches ≥ <input id="gSwitch" type="number" value="2" min="0" /></label>
+            <label>Portal relocations ≥ <input id="gReloc" type="number" value="1" min="0" /></label>
+            <label>Coop dependencies ≥ <input id="gCoop" type="number" value="1" min="0" /></label>
+            <label>Alternation depth ≥ <input id="gAlt" type="number" value="2" min="0" /></label>
+            <label>Max difficulty
+              <select id="gDiff"><option>low</option><option selected>medium</option><option>high</option></select>
+            </label>
+            <label>Seed <input id="gSeed" type="number" value="1" /></label>
+            <label>Candidates <input id="gCount" type="number" value="4" min="1" max="50" /></label>
+            <label>Iterations <input id="gIter" type="number" value="800" min="10" /></label>
+          </div>
+          <div class="row">
+            <button id="generateBtn">Generate</button>
+            <label><input type="checkbox" id="gAccepted" /> Accepted only</label>
+            <select id="gSort">
+              <option value="index">Order generated</option>
+              <option value="actions">Most actions</option>
+              <option value="alternation">Most alternation</option>
+              <option value="score">Best score</option>
+            </select>
+          </div>
+          <pre id="genStatus"></pre>
+          <div id="candidates" class="list"></div>
+        </div>
+      </aside>
+    </main>
+    <script type="module" src="/src/ui/main.js"></script>
   </body>
 </html>
