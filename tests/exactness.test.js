@@ -262,3 +262,50 @@ test('a standing Mario character can walk to and stop at any rest position on it
     assert.equal(b.vx, 0);
   }
 });
+
+// Regressions found by the adversarial audit.
+
+test('regression: solver states stay distinct with 128 or more sockets', () => {
+  // 128 sockets; the solution needs portals (0, 127), whose packed key used to
+  // collide with portals (1, -1).
+  const g = Array.from({ length: 16 }, () => Array(16).fill('#'));
+  g[1][3] = '.'; g[1][5] = '.'; g[1][6] = '.'; g[1][7] = '.';
+  for (let y = 2; y <= 13; y++) g[y][3] = '~';
+  g[14][3] = '.';
+  for (let y = 3; y <= 14; y++) for (let x = 5; x <= 15; x++) g[y][x] = x % 2 ? '.' : '#';
+  const rows = g.map((r) => r.join(''));
+  const probe = Level.fromJSON({ tiles: rows, startA: { x: 3, y: 1 }, startB: { x: 6, y: 1 }, exits: [], sockets: [] });
+  const sockets = [{ type: 'wall', x: 2, y: 1, n: 1 }, { type: 'floor', x: 3, y: 1 }];
+  for (let y = 3; y <= 14; y++) for (let x = 4; x <= 15; x++) for (const n of [-1, 1]) {
+    const s = { type: 'wall', x, y, n };
+    if (sockets.length < 127 && probe.socketValid(s)) sockets.push(s);
+  }
+  sockets.push({ type: 'floor', x: 6, y: 1 });
+  assert.equal(sockets.length, 128);
+  const L = Level.fromJSON({ tiles: rows, startA: { x: 3, y: 1 }, startB: { x: 6, y: 1 }, exits: [{ x: 3, y: 1 }, { x: 3, y: 14 }], sockets });
+  assert.deepEqual(L.validate(), []);
+  const an = analyzeLevel(L);
+  const r = solve(an);
+  assert.equal(r.status, 'solved');
+  assert.equal(r.minActions, 3);
+});
+
+test('regression: a Zelda character standing on an active floor portal can place a portal there', () => {
+  const L = Level.fromAscii([
+    '##########',
+    '#A.[]oB.##',
+    '####~~~~~#',
+    '####~~~~~#',
+    '####~~~~~#',
+    '####~~~E~#',
+    '##########',
+  ]);
+  const an = analyzeLevel(L);
+  const F = L.idx(5, 1);
+  // A on F, B nearby, portals: A owns wall socket 0, B owns floor socket 2 (F) -> F is blocked.
+  const model = new PuzzleModel(an);
+  const from = [ZELDA, F, ZELDA, L.idx(6, 1), 0, 2];
+  const succ = model.successors(from).find((x) => x.action.c === 0 && x.action.type === 'place' && x.action.socket === 1);
+  assert.ok(succ, 'A can relocate onto wall socket 1, whose access cell is F');
+  assert.ok(executeAction(L, an, from, succ.action, succ.state).ok);
+});

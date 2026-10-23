@@ -81,7 +81,7 @@ Analysis takes about 100 ms for a 12×12 level. After an edit, only platforms wh
 - **Portal launch speed is a constant** (about 9 tiles/s along the face normal). Entry momentum is not preserved yet.
 - **Mid-jump portal entry is modelled.** A jump that passes an active portal goes through it, so the solver treats it as `EnterPortal`, not `JumpTo`.
 - **Physics units were chosen for exact analysis.** Horizontal speeds come in steps of 1/128 tile per frame (about 0.47 tiles/s), so an analog stick has 11 run speeds each way. Running is about 5.2 tiles/s, ground acceleration about 56 tiles/s² and air control about 28 tiles/s². Vertical motion uses 1/1024 tile.
-- **A Mario move ends at its first landing.** The character then comes to rest before the next move, so speed carried from one landing straight into the next jump isn't a separate move. The random-play audit below, which keeps steering and jumping through landings, hasn't found any situation that this leaves out.
+- **A Mario move ends at its first landing.** The character then comes to rest before its next move. This is the analysis's one known gap. A character launched out of a portal at about 9 tiles/s can land and jump again on the very next frame, keeping speed it could never reach from a standstill (maximum about 5.2 tiles/s), and jump much further: about 5.3 tiles instead of 3.4 for a full jump. The adversarial audit built a level that is only solvable this way (the solver calls it unsolvable). It's rare in generated levels (2 of 199 dense random levels), but it is real.
 - **Walking inside a Zelda region is folded into the next action** and is not a separate step. Zelda locations are exact cells, because an active floor portal is a hole that can split regions.
 - **Characters do not collide with each other.**
 - **Execution tolerance is a heuristic.** For each move used, it counts how many landing positions (in eighths of a tile, summed over every speed and jump hold that works) produce the same result. 24 or more counts as forgiving.
@@ -118,7 +118,13 @@ Results during development:
 | Solver transitions executed in the game | 12,098. All ended in the predicted state. |
 | Random-play checks | 913 k. All covered by the model. |
 
-The audits caught two real bugs, both now fixed:
+An adversarial agent then spent about 2.5 hours trying to break these claims. Its independent exhaustive search covered every full body state (about 6.4 billion states over 960 levels, up to 16×16), and it found no mismatch with the reachability analysis in either direction. It also replayed 334k witnesses, ran 480k solver transitions in the game, ran 9k incremental-cache checks, and ran 16M random-play checks. It found two solver bugs (below) and the momentum gap described above.
+
+Bugs found and fixed:
 
 - The first version of the analysis dropped moves that touch walls in mid-air, such as falling down a shaft after a launch.
 - The solver didn't allow placing a portal while standing on the overhanging edge of a platform, which the game allows.
+- Solver state keys could collide in levels with 128 or more sockets, so a solvable level was reported unsolvable.
+- A Zelda character standing on an active floor portal couldn't place a portal whose access cell is that tile in the model, though the game allows it. No solver answer was found that this changed.
+
+Performance limit: analysis cost grows with the number of wall-socket faces, because each distinct sequence of sockets touched is tracked separately. A 16×16 level with 116 sockets took 26 s.

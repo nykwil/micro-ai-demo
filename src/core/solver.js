@@ -20,8 +20,13 @@ import { reachableLabels } from './zelda.js';
 
 const MAX_CHAIN = 4;
 
-function pack(s) {
-  return ((((s[0] * 512 + s[1]) * 2 + s[2]) * 512 + s[3]) * 128 + (s[4] + 1)) * 128 + (s[5] + 1);
+// Unique numeric key for a state. Radixes come from the level so no field can
+// overflow into the next (locations are cells or platforms, both fewer than
+// the cell count; portals are -1 or a socket id).
+function packer(level) {
+  const L = level.tiles.length;
+  const P = level.sockets.length + 1;
+  return (s) => ((((s[0] * L + s[1]) * 2 + s[2]) * L + s[3]) * P + (s[4] + 1)) * P + (s[5] + 1);
 }
 
 export class PuzzleModel {
@@ -129,7 +134,9 @@ export class PuzzleModel {
     if (mode === ZELDA) {
       const regions = this.regions(p0, p1);
       const set = reachableLabels(L, regions, loc);
-      const reach = (cell) => set.has(regions.label[cell]);
+      // A character standing on an active floor portal (blocked for walking)
+      // can still act on that very cell, e.g. place a portal whose access cell it is.
+      const reach = (cell) => cell === loc || set.has(regions.label[cell]);
       L.sockets.forEach((sk, sid) => {
         if (sid === own || sid === other) return;
         const a = this.access[sid];
@@ -171,6 +178,7 @@ export class PuzzleModel {
 // goal test). Used by tests and audits; the graph can be large.
 export function exploreAll(analysis, { maxStates = 200000 } = {}) {
   const model = new PuzzleModel(analysis);
+  const pack = packer(analysis.level);
   const start = model.initialState();
   const states = new Map([[pack(start), start]]);
   const queue = [start];
@@ -187,6 +195,7 @@ export function exploreAll(analysis, { maxStates = 200000 } = {}) {
 
 export function solve(analysis, { maxStates = 400000 } = {}) {
   const model = new PuzzleModel(analysis);
+  const pack = packer(analysis.level);
   const start = model.initialState();
   const startKey = pack(start);
   const info = new Map([[startKey, { parent: -1, action: null, depth: 0, count: 1 }]]);
