@@ -5,7 +5,7 @@ A design tool and playable prototype for a cooperative two-character portal puzz
 - **Zelda mode**: top-down, four-directional, walls block walking.
 - **Mario mode**: side-on platforming, gravity pulls to the bottom of the screen, and the top edges of solid tiles are platforms.
 
-Each character owns one portal endpoint. Floor → wall switches to Mario, wall → floor switches to Zelda, and wall → wall keeps the current mode. Floor → floor is excluded. Both characters must reach the exit.
+Each character owns one portal endpoint. Any trip between a wall portal and a floor portal switches physics mode: Zelda becomes Mario, Mario becomes Zelda. A Zelda character entering a wall portal drops out of the floor portal in Mario mode. Wall → wall keeps the current mode. Floor → floor is excluded. Both characters must reach the exit.
 
 The tool generates levels from a puzzle grammar, works out real reachability in both movement modes, solves for both characters, and replays the solution through the gameplay physics to verify it.
 
@@ -25,8 +25,8 @@ npm run build        # static build in dist/
 
 | Tab | What it does |
 | --- | --- |
-| **Edit** | Paint floor / solid / pit, exits, starts and sockets. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
-| **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), and **Find shortcut fix**. |
+| **Edit** | Paint floor / solid / pit, exits, starts and sockets (shootable surfaces, drawn light blue). Each level can turn on tutorial hints that show where a tap would place a portal. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
+| **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), **Find shortcut fix**, and **Fail conditions**: every move that soft-locks the level (no way left to get both characters to the exit), with a view of the stuck situation. |
 | **Play** | Real-time game. A: WASD (W/Space jumps), E shoots. B: arrows (Up jumps), Enter or `/` shoots. One gamepad: left stick = A, right stick = B. Two gamepads: one each. Shots fire on release: tap to shoot the way you face, hold + direction + release to aim, long hold with no direction to shoot the floor under you. **Watch solution** plays the shortest solution in the real game. |
 | **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. |
 

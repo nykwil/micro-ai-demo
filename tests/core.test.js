@@ -373,3 +373,19 @@ test('shooting: straight cardinal lines to marked sockets only', () => {
   assert.equal(g2.shoot(0, LEFT).sid, -1, 'standing a row lower: the socket is not in line');
   assert.equal(g2.shoot(0, SHOOT_FLOOR).sid, -1, 'no floor shots in platformer mode');
 });
+
+test('any wall → floor trip switches mode: top-down in, platformer out (dropping out of the floor portal)', () => {
+  const { L, g } = portalGame();
+  const wall = L.sockets.findIndex((s) => s.type === 'wall');
+  const floor = L.sockets.findIndex((s) => s.type === 'floor');
+  g.portals = [wall, floor];
+  g.chars[0].body = bodyAtCell(1, 2, ZELDA);
+  walkInto(g, 0, { mx: -1 }, 20);
+  const tp = g.events.find((e) => e.type === 'teleport');
+  assert.ok(tp && tp.socket === wall && tp.exit === floor);
+  assert.equal(tp.fromMode, ZELDA);
+  assert.equal(tp.toMode, MARIO);
+  // In side view the floor socket's cell is open air: the character falls to the floor below.
+  for (let i = 0; i < 120; i++) g.step([{}, {}]);
+  assert.equal(g.chars[0].body.grounded, true);
+});

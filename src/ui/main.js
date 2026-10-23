@@ -1,7 +1,7 @@
 import { Level, FLOOR, SOLID, PIT, WALL, FLOOR_SOCKET } from '../core/level.js';
 import { MarioAnalyzer } from '../core/mario.js';
 import { analyzeLevel, summarize, changeReport } from '../core/analysis.js';
-import { solve, describeAction } from '../core/solver.js';
+import { solve, describeAction, findFailures, describeState } from '../core/solver.js';
 import { computeMetrics } from '../core/metrics.js';
 import { replaySolution } from '../core/replay.js';
 import { repairShortcut, DEFAULT_TARGETS } from '../core/generator.js';
@@ -64,6 +64,7 @@ function loadLevel(level, { candidate = null } = {}) {
 function reanalyze(desc) {
   const L = S.level;
   $('levelName').textContent = L.name;
+  $('levelHints').checked = L.hints;
   const errors = L.validate();
   const before = S.summary;
   S.analysis = analyzeLevel(L, S.analyzer);
@@ -71,6 +72,7 @@ function reanalyze(desc) {
   S.metrics = S.result.status === 'solved' ? computeMetrics(L, S.analysis, S.result) : null;
   S.summary = summarize(S.analysis, S.result);
   S.step = -1;
+  S.viewState = null;
   S.anim = null;
   S.selectedEdge = -1;
   if (desc && before) {
@@ -259,7 +261,45 @@ const METRIC_LABELS = [
   ['navigationFrames', 'Navigation frames'],
 ];
 
+function renderFailures() {
+  const box = $('failures');
+  box.innerHTML = '';
+  if (S.result.status === 'invalid') return;
+  const f = findFailures(S.analysis);
+  const head = document.createElement('div');
+  head.className = 'hint';
+  head.textContent = `${f.states} reachable situations, ${f.deadStates.length} dead ends${f.complete ? '' : ' (search budget reached: incomplete)'}.`;
+  box.appendChild(head);
+  // Group by the move, keeping one example of where it leaves you.
+  const groups = new Map();
+  for (const m of f.failMoves) {
+    const k = describeAction(S.level, S.analysis, m.action);
+    if (!groups.has(k)) groups.set(k, { count: 0, example: m });
+    groups.get(k).count++;
+  }
+  if (!groups.size) {
+    const ok = document.createElement('div');
+    ok.className = 'hint';
+    ok.textContent = 'No fail conditions: the level can always still be won.';
+    box.appendChild(ok);
+  }
+  for (const [k, g] of groups) {
+    const div = document.createElement('div');
+    div.className = 'item' + (S.viewState === g.example.to ? ' sel' : '');
+    div.textContent = `${k}  (from ${g.count} situation${g.count > 1 ? 's' : ''}) → stuck: ${describeState(S.level, S.analysis, g.example.to)}`;
+    div.onclick = () => {
+      S.viewState = S.viewState === g.example.to ? null : g.example.to;
+      S.step = -1;
+      S.anim = null;
+      renderFailures();
+      S.dirty = true;
+    };
+    box.appendChild(div);
+  }
+}
+
 function renderSolve() {
+  renderFailures();
   const r = S.result;
   const sol = $('solution');
   sol.innerHTML = '';
@@ -275,6 +315,7 @@ function renderSolve() {
       li.className = S.step === i + 1 ? 'sel' : '';
       li.onclick = () => {
         S.step = S.step === i + 1 ? -1 : i + 1;
+        S.viewState = null;
         S.anim = null;
         renderSolve();
         S.dirty = true;
@@ -413,7 +454,7 @@ function updatePlayInfo() {
     const target = g.aimShot(c, aiming ? aimDir(c) : g.chars[c].facing);
     const tip = aiming
       ? `  → aiming${aimDir(c) === SHOOT_FLOOR ? ' at the floor' : ''}: release ${KEY_LABEL[c]} to shoot${target.sid >= 0 ? ' (on target)' : ''}`
-      : target.sid >= 0 && target.sid !== g.portals[c] ? `  → tap ${KEY_LABEL[c]} to shoot the socket ahead` : '';
+      : S.level.hints && target.sid >= 0 && target.sid !== g.portals[c] ? `  → tap ${KEY_LABEL[c]} to shoot the socket ahead` : '';
     return `${'AB'[c]}: ${name(g.chars[c])} mode, portal ${sk(g.portals[c])}${tip}`;
   });
   lines.push(g.active() ? 'Portals connected: walk into one to come out of the other.' : 'Portals not connected yet: each player needs one placed.');
@@ -520,6 +561,9 @@ $('importJson').onchange = async (e) => {
   }
   e.target.value = '';
 };
+$('levelHints').onchange = (e) => {
+  S.level.hints = e.target.checked;
+};
 $('copyAscii').onclick = async () => {
   const text = S.level.toAscii().join('\n');
   try { await navigator.clipboard.writeText(text); setStatus('ASCII copied to clipboard'); }
@@ -554,7 +598,9 @@ playSel.onchange = () => {
 };
 function loadSample(i) {
   const s = SAMPLES[i];
-  loadLevel(Level.fromAscii(s.rows, s.name));
+  const L = Level.fromAscii(s.rows, s.name);
+  L.hints = !!s.hints;
+  loadLevel(L);
   sel.value = String(i);
   playSel.value = String(i);
 }
@@ -644,8 +690,9 @@ function frame(now) {
       const d = aimDir(c);
       return { c, body: S.game.chars[c].body, dir: d, floor: d === SHOOT_FLOOR, ...S.game.aimShot(c, d) };
     });
+    // "Shoot here" prompts are a per-level feature (tutorials).
     hints = [0, 1]
-      .filter((c) => !S.aim[c].down)
+      .filter((c) => S.level.hints && !S.aim[c].down)
       .map((c) => ({ c, sid: S.game.aimShot(c, S.game.chars[c].facing).sid, key: KEY_LABEL[c] }))
       .filter((h) => h.sid >= 0 && h.sid !== S.game.portals[h.c]);
     const tnow = performance.now();
@@ -661,8 +708,8 @@ function frame(now) {
     a.i += 1;
     if (a.i >= a.frames.length + 60) S.anim = null;
     S.dirty = true;
-  } else if (S.step >= 0 && S.result.states) {
-    const st = S.result.states[S.step];
+  } else if (S.viewState || (S.step >= 0 && S.result.states)) {
+    const st = S.viewState || S.result.states[S.step];
     bodies = [bodyForState(S.level, S.analysis, st[0], st[1]), bodyForState(S.level, S.analysis, st[2], st[3])];
     portals = [st[4], st[5]];
   }

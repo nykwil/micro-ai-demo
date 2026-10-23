@@ -201,10 +201,12 @@ export class MarioAnalyzer {
       });
     });
 
-    // Portal launches out of each wall socket.
+    // Coming out of each socket in Mario mode: launched out of a wall portal,
+    // or dropping out of a floor portal (entered from a wall in Zelda mode).
     const launches = level.sockets.map((s, sid) => {
-      if (s.type !== WALL || !level.socketValid(s)) return [];
-      const outcomes = this.cached(`s${s.x},${s.y},${s.n}`, (env) => movesFromLaunch(env, sid), shared);
+      if (!level.socketValid(s)) return [];
+      const key = s.type === WALL ? `s${s.x},${s.y},${s.n}` : `f${s.x},${s.y}`;
+      const outcomes = this.cached(key, (env) => movesFromLaunch(env, sid), shared);
       const merged = new Map();
       for (const o of outcomes.values()) {
         const r = resolve(o);

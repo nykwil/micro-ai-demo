@@ -13,6 +13,8 @@ export const COLORS = {
   solidTop: '#9aa7c0',
   exit: '#3fbf6a',
   socket: '#e8e8f0',
+  shootable: '#bfe9ff', // surfaces that take portals
+  shootableEdge: '#5aa9cf',
   portal: ['#ff8a1f', '#2f8cff'],
   text: '#111',
 };
@@ -140,13 +142,14 @@ export function drawLevel(ctx, level, ts, opts = {}) {
     ctx.save();
     if (s.type === WALL) {
       const fx = (s.n > 0 ? s.x + 1 : s.x) * ts;
-      if (owner < 0) {
-        const th = Math.max(3, ts * 0.1);
-        ctx.strokeStyle = 'rgba(232,232,240,0.7)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 3]);
-        ctx.strokeRect(s.n > 0 ? fx - th : fx, s.y * ts + ts * 0.12, th, ts * 0.76);
-      } else {
+      // Shootable wall surface: a panel along the face.
+      const pw = Math.max(4, ts * 0.16);
+      ctx.fillStyle = COLORS.shootable;
+      ctx.strokeStyle = COLORS.shootableEdge;
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(s.n > 0 ? fx - pw : fx, s.y * ts + 1, pw, ts - 2);
+      ctx.strokeRect(s.n > 0 ? fx - pw : fx, s.y * ts + 1, pw, ts - 2);
+      if (owner >= 0) {
         // A portal is an upright oval on the wall face, opening towards the access cell.
         const cx = fx + s.n * ts * 0.06;
         const cy = (s.y + 0.5) * ts;
@@ -175,14 +178,13 @@ export function drawLevel(ctx, level, ts, opts = {}) {
     } else {
       const cx = (s.x + 0.5) * ts;
       const cy = (s.y + 0.5) * ts;
-      if (owner < 0) {
-        ctx.strokeStyle = 'rgba(232,232,240,0.7)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, ts * 0.36, ts * 0.28, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      } else {
+      // Shootable floor surface: a panel covering the tile.
+      ctx.fillStyle = COLORS.shootable;
+      ctx.strokeStyle = COLORS.shootableEdge;
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(s.x * ts + 2, s.y * ts + 2, ts - 4, ts - 4);
+      ctx.strokeRect(s.x * ts + 2, s.y * ts + 2, ts - 4, ts - 4);
+      if (owner >= 0) {
         // A floor portal is a hole in the floor ringed in the owner's colour.
         if (active) {
           ctx.shadowColor = color;

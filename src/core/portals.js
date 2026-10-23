@@ -1,8 +1,10 @@
 // Portal rules shared by gameplay, analysis and the solver.
 //
 //   Wall  -> Wall   preserve movement mode
-//   Floor -> Wall   switch to Mario mode (launched out of the wall)
-//   Wall  -> Floor  switch to Zelda mode
+//   Floor -> Wall   switch mode (only Zelda characters can enter a floor portal,
+//                   so this always gives Mario mode, launched out of the wall)
+//   Wall  -> Floor  switch mode: Mario comes out in Zelda mode; Zelda comes out
+//                   in Mario mode, dropping out of the floor portal's cell
 //   Floor -> Floor  excluded: such a pair is inactive
 //
 // A Zelda-mode character can only come out of a wall portal onto a FLOOR
@@ -39,8 +41,7 @@ export function transitionMode(level, entrySid, exitSid, entryMode) {
   const bWall = b.type === WALL;
   if (!aWall && !bWall) return null;
   if (!aWall && entryMode !== ZELDA) return null;
-  if (!aWall && bWall) return MARIO;
-  if (aWall && !bWall) return ZELDA;
+  if (aWall !== bWall) return entryMode === ZELDA ? MARIO : ZELDA;
   if (entryMode === ZELDA) {
     const c = level.accessCell(b);
     if (level.get(c.x, c.y) !== FLOOR) return null;
@@ -50,7 +51,14 @@ export function transitionMode(level, entrySid, exitSid, entryMode) {
 
 export function exitBody(level, exitSid, mode) {
   const s = level.sockets[exitSid];
-  if (s.type !== WALL) return bodyAtCell(s.x, s.y, ZELDA);
+  if (s.type !== WALL) {
+    if (mode === ZELDA) return bodyAtCell(s.x, s.y, ZELDA);
+    // Mario mode out of a floor portal: appear in its cell at rest and drop.
+    const b = bodyAtCell(s.x, s.y, MARIO);
+    b.grounded = false;
+    b.jumpWasDown = true;
+    return b;
+  }
   const c = level.accessCell(s);
   if (mode === ZELDA) return bodyAtCell(c.x, c.y, ZELDA);
   const b = bodyAtCell(c.x, c.y, MARIO);

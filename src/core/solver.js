@@ -199,6 +199,73 @@ export function exploreAll(analysis, { maxStates = 200000 } = {}) {
   return { model, states: [...states.values()], complete: states.size <= maxStates };
 }
 
+// Fail conditions: states reachable from the start from which the exit can
+// never be reached again (soft-locks), and the moves that lead into them from
+// states that could still win.
+export function findFailures(analysis, { maxStates = 200000 } = {}) {
+  const model = new PuzzleModel(analysis);
+  const pack = packer(analysis.level);
+  const start = model.initialState();
+  const index = new Map([[pack(start), 0]]);
+  const states = [start];
+  const edges = [[]];
+  let complete = true;
+  for (let i = 0; i < states.length; i++) {
+    for (const { state, action } of model.successors(states[i])) {
+      const k = pack(state);
+      let j = index.get(k);
+      if (j === undefined) {
+        if (states.length >= maxStates) {
+          complete = false;
+          continue;
+        }
+        j = states.length;
+        index.set(k, j);
+        states.push(state);
+        edges.push([]);
+      }
+      edges[i].push({ to: j, action });
+    }
+  }
+  // Backwards from every goal state: which states can still win?
+  const reverse = states.map(() => []);
+  edges.forEach((es, i) => es.forEach((e) => reverse[e.to].push(i)));
+  const live = new Uint8Array(states.length);
+  const queue = [];
+  states.forEach((st, i) => {
+    if (model.isGoal(st)) {
+      live[i] = 1;
+      queue.push(i);
+    }
+  });
+  for (let q = 0; q < queue.length; q++) {
+    for (const p of reverse[queue[q]]) {
+      if (!live[p]) {
+        live[p] = 1;
+        queue.push(p);
+      }
+    }
+  }
+  const failMoves = [];
+  edges.forEach((es, i) => {
+    if (!live[i]) return;
+    for (const e of es) if (!live[e.to]) failMoves.push({ from: states[i], action: e.action, to: states[e.to] });
+  });
+  const deadStates = states.filter((_, i) => !live[i]);
+  return { complete, solvable: !!live[0], states: states.length, deadStates, failMoves };
+}
+
+export function describeState(level, analysis, st) {
+  const where = (mode, loc) => {
+    if (mode === MARIO) {
+      const p = analysis.mario.platforms[loc];
+      return `platformer, on row ${p.y} x ${p.x0}-${p.x1}`;
+    }
+    return `top-down, at (${loc % level.width}, ${Math.floor(loc / level.width)})`;
+  };
+  return `A ${where(st[0], st[1])}; B ${where(st[2], st[3])}`;
+}
+
 export function solve(analysis, { maxStates = 400000 } = {}) {
   const model = new PuzzleModel(analysis);
   const pack = packer(analysis.level);

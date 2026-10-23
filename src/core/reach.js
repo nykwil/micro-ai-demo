@@ -745,6 +745,10 @@ export function movesFromPlatform(levelOrEnv, platforms, pid, { profiles = null 
 }
 
 export function launchStart(level, s) {
+  if (s.type !== 'wall') {
+    // Mario mode out of a floor portal: at rest in the socket's cell (see portals.exitBody).
+    return { X0: s.x * S + (S - W) / 2, Y0: (s.y + 1) * SY - H, vx0: 0 };
+  }
   const a = level.accessCell(s);
   return {
     X0: s.n > 0 ? (s.x + 1) * S + PHYS.exitGap : s.x * S - W - PHYS.exitGap,

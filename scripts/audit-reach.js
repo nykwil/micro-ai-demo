@@ -33,7 +33,7 @@ for (const [li, L] of levels.entries()) {
   const env = makeEnv(L); const sc = standableCells(L); const { platforms } = extractPlatforms(L, sc);
   const t1 = Date.now();
   const per = platforms.map((_, p) => movesFromPlatform(env, platforms, p));
-  const launches = L.sockets.map((s, sid) => s.type === 'wall' ? movesFromLaunch(env, sid) : null);
+  const launches = L.sockets.map((s, sid) => L.socketValid(s) ? movesFromLaunch(env, sid) : null);
   tA += Date.now() - t1;
   // (1) soundness
   per.forEach((outs, p) => { for (const o of outs.values()) { const w = witnessFor(env, o);

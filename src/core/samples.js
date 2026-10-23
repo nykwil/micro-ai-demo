@@ -4,8 +4,9 @@
 
 export const SAMPLES = [
   {
-    name: 'First Fall',
-    note: 'Floor → wall drops a character into Mario mode; gravity carries them past the pits.',
+    name: 'Tutorial: First Fall',
+    note: 'Tutorial. Shoot the wall and the floor socket, step into the floor portal: you come out of the wall in platformer mode and gravity carries you past the pits.',
+    hints: true,
     rows: [
       '############',
       '#..........#',

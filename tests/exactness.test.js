@@ -58,7 +58,7 @@ function allMoves(L) {
   const env = makeEnv(L);
   const { platforms } = extractPlatforms(L, standableCells(L));
   const fromPlatform = platforms.map((_, p) => movesFromPlatform(env, platforms, p));
-  const fromLaunch = L.sockets.map((s, sid) => (s.type === 'wall' ? movesFromLaunch(env, sid) : null));
+  const fromLaunch = L.sockets.map((s, sid) => (L.socketValid(s) ? movesFromLaunch(env, sid) : null));
   return { env, platforms, fromPlatform, fromLaunch };
 }
 

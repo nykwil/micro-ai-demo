@@ -26,8 +26,9 @@ export const WALL = 'wall';
 export const FLOOR_SOCKET = 'floor';
 
 export class Level {
-  constructor({ name = 'untitled', width, height, tiles, startA, startB, exits = [], sockets = [] }) {
+  constructor({ name = 'untitled', width, height, tiles, startA, startB, exits = [], sockets = [], hints = false }) {
     this.name = name;
+    this.hints = !!hints; // tutorial level: show "you can shoot here" prompts
     this.width = width;
     this.height = height;
     this.tiles = tiles instanceof Uint8Array ? tiles : Uint8Array.from(tiles);
@@ -121,6 +122,7 @@ export class Level {
     }
     return {
       name: this.name,
+      hints: this.hints,
       width: this.width,
       height: this.height,
       tiles: rows,

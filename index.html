@@ -49,6 +49,9 @@
             <button id="newLevel">New 12×12</button>
           </div>
           <div class="row">
+            <label><input type="checkbox" id="levelHints" /> Tutorial hints (show where a tap would place a portal)</label>
+          </div>
+          <div class="row">
             <button id="exportJson">Export JSON</button>
             <label class="file">Import JSON<input type="file" id="importJson" accept=".json,application/json" /></label>
             <button id="copyAscii">Copy ASCII</button>
@@ -71,6 +74,9 @@
           <ol id="solution" class="list"></ol>
           <h2>Metrics</h2>
           <table id="metrics"></table>
+          <h2>Fail conditions</h2>
+          <p class="hint">Moves that leave the level unwinnable: afterwards no sequence of actions gets both characters to the exit. Click one to see the stuck situation.</p>
+          <div id="failures" class="list"></div>
           <div id="intended"></div>
         </div>
 
@@ -90,7 +96,7 @@
           </table>
           <h2>Shooting portals</h2>
           <ul class="hint">
-            <li>Portals only stick to marked sockets: the dashed bars on wall sides and the dashed ovals on floor tiles.</li>
+            <li>Portals only stick to shootable surfaces, drawn in light blue: panels on the sides of wall blocks, and floor tiles.</li>
             <li>Shots fire when you <b>release</b> the shoot key:
               <ul>
                 <li><b>Tap</b>: shoot the way you're facing (the little arrow).</li>
