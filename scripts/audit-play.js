@@ -11,9 +11,10 @@ import { exploreAll } from '../src/core/solver.js';
 import { Game } from '../src/core/game.js';
 import { gameAtState } from '../src/core/replay.js';
 import { ZELDA, MARIO, centerCell } from '../src/core/physics.js';
-import { blockedCell } from '../src/core/portals.js';
+import { blockedCell, SHOOT_FLOOR } from '../src/core/portals.js';
 import { reachableLabels } from '../src/core/zelda.js';
 import { SAMPLES } from '../src/core/samples.js';
+const SHOTS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }, SHOOT_FLOOR];
 const NLEV = +process.argv[2] || 6, FRAMES = +process.argv[3] || 200000;
 const levels = SAMPLES.map(s => Level.fromAscii(s.rows));
 for (let s = 0; levels.length < NLEV; s++) { const rng = new Rng(3100 + s); const g = expandGrammar({ physicsSwitches: 2, coopDeps: 1, alternationDepth: 3, portalRelocations: 1 }, rng);
@@ -45,7 +46,7 @@ for (const [li, L] of levels.entries()) {
     if (f % 600 === 0) g = gameAtState(L, an, rng.pick(ex.states));
     for (const c of [0, 1]) {
       if (hold[c]-- <= 0) { hold[c] = rng.int(1, 40); inp[c] = { mx: rng.chance(0.5) ? rng.next() * 2 - 1 : rng.int(-1, 1), my: rng.chance(0.3) ? rng.int(-1, 1) : 0, jump: rng.chance(0.4) }; }
-      if (rng.chance(0.01)) g.placePortal(c);
+      if (rng.chance(0.01)) g.shoot(c, rng.pick(SHOTS));
     }
     g.step(inp);
     // Check at moments when both characters are at rest (Zelda: anywhere; Mario: grounded and stopped).

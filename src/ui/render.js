@@ -22,7 +22,7 @@ function hue(i, a = 1) {
 }
 
 export function drawLevel(ctx, level, ts, opts = {}) {
-  const { analysis, overlays = {}, portals = [-1, -1], bodies = null, selectedEdge = -1, hover = null, hints = [], flash = null } = opts;
+  const { analysis, overlays = {}, portals = [-1, -1], bodies = null, selectedEdge = -1, hover = null, hints = [], aims = [], shots = [], flash = null } = opts;
   const W = level.width;
   const H = level.height;
   ctx.save();
@@ -259,6 +259,50 @@ export function drawLevel(ctx, level, ts, opts = {}) {
   } else {
     bodies.forEach((b, i) => drawBody(ctx, b, i, ts));
   }
+
+  // Shot line from a body's centre to where it stops (the hit tile's near
+  // edge), with a marker: a ring when it will place a portal, a cross if not.
+  const drawShot = ({ c, body, dir, floor, hit, sid }, dashed, width) => {
+    if (!hit) return;
+    const color = sid >= 0 ? COLORS.portal[c] : 'rgba(200,200,210,0.9)';
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+    if (floor) {
+      ctx.setLineDash(dashed ? [4, 3] : []);
+      ctx.beginPath();
+      ctx.ellipse((hit.x + 0.5) * ts, (hit.y + 0.5) * ts, ts * 0.44, ts * 0.36, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const bx = (body.x + PHYS.w / 2) * ts;
+      const by = (body.y + PHYS.h / 2) * ts;
+      const ex = dir.x > 0 ? hit.x * ts : dir.x < 0 ? (hit.x + 1) * ts : bx;
+      const ey = dir.y > 0 ? hit.y * ts : dir.y < 0 ? (hit.y + 1) * ts : by;
+      ctx.setLineDash(dashed ? [6, 4] : []);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const r = ts * 0.18;
+      if (sid >= 0) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(ex - r, ey - r);
+        ctx.lineTo(ex + r, ey + r);
+        ctx.moveTo(ex + r, ey - r);
+        ctx.lineTo(ex - r, ey + r);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+  for (const a of aims) drawShot(a, true, 2);
+  for (const sh of shots) drawShot(sh, false, 4);
 
   // Message above a player after pressing the place key.
   if (flash && bodies) {

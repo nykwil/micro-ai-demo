@@ -12,7 +12,7 @@
 
 import { SOLID, WALL, diffTiles } from './level.js';
 import { MARIO } from './physics.js';
-import { exitBody } from './portals.js';
+import { exitBody, shotLine } from './portals.js';
 import { makeEnv, movesFromPlatform, movesFromLaunch, witnessFor, simulateMove, restingBody, measure, centerRange } from './reach.js';
 import { SUBX } from './physics.js';
 
@@ -178,16 +178,26 @@ export class MarioAnalyzer {
 
     // Walking into a wall socket from the platform its access cell lies on.
     const walkIn = platforms.map(() => []);
-    // Placing a portal needs the character standing with its centre in the
-    // socket's access cell, which can be an overhang past the platform's end.
+    // Shooting a portal needs the character standing (grounded) with its
+    // centre in a cell on the socket's line of fire. That can be an overhang
+    // past the platform's end. shootAt[pid][sid] is a rest X (SUBX units) to
+    // shoot from.
     const placeFrom = platforms.map(() => []);
+    const shootAt = platforms.map(() => new Map());
     level.sockets.forEach((s, sid) => {
       if (s.type !== WALL) return;
       const a = level.accessCell(s);
       const p = platformOf[level.idx(a.x, a.y)];
       if (p >= 0) walkIn[p].push(sid);
+      const line = shotLine(level, s);
       platforms.forEach((pl, pid) => {
-        if (centerRange(level, pl, a.x, a.y)) placeFrom[pid].push(sid);
+        for (const c of line) {
+          const r = centerRange(level, pl, c.x, c.y);
+          if (!r) continue;
+          placeFrom[pid].push(sid);
+          shootAt[pid].set(sid, Math.floor((r[0] + r[1]) / 2));
+          break;
+        }
       });
     });
 
@@ -232,6 +242,7 @@ export class MarioAnalyzer {
       edgesFrom,
       walkIn,
       placeFrom,
+      shootAt,
       launches,
       witness,
       stats: { ...this.stats, ms: now() - t0 },

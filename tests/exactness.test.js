@@ -15,13 +15,14 @@ import {
   makeEnv, movesFromPlatform, movesFromLaunch, witnessFor, simulateMove, restingBody, restRange,
   replayWitness, outcomeKey, runProduces,
 } from '../src/core/reach.js';
-import { exitBody, blockedCell } from '../src/core/portals.js';
+import { exitBody, blockedCell, SHOOT_FLOOR } from '../src/core/portals.js';
 import { solve, exploreAll, PuzzleModel } from '../src/core/solver.js';
 import { executeAction, gameAtState, planWalk } from '../src/core/replay.js';
 import { reachableLabels } from '../src/core/zelda.js';
 import { Game } from '../src/core/game.js';
 import { SAMPLES } from '../src/core/samples.js';
 
+const SHOTS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }, SHOOT_FLOOR];
 const RANDOM_MOVES_PER_LEVEL = 3000;
 const TRANSITION_STATES_PER_LEVEL = 60;
 const PLAY_FRAMES_PER_LEVEL = 30000;
@@ -68,7 +69,7 @@ test('physics arithmetic is exact: positions stay on the sub-unit grid', () => {
   for (let f = 0; f < 20000; f++) {
     if (f % 500 === 0) g.reset();
     const inp = () => ({ mx: rng.next() * 2 - 1, my: rng.int(-1, 1), jump: rng.chance(0.5) });
-    if (rng.chance(0.02)) g.placePortal(rng.int(0, 1));
+    if (rng.chance(0.02)) g.shoot(rng.int(0, 1), rng.pick(SHOTS));
     g.step([inp(), inp()]);
     for (const c of g.chars) {
       const b = c.body;
@@ -228,7 +229,7 @@ test('solver: random play in the real game stays inside the solver model', () =>
           hold[c] = rng.int(1, 40);
           inp[c] = { mx: rng.chance(0.5) ? rng.next() * 2 - 1 : rng.int(-1, 1), my: rng.chance(0.3) ? rng.int(-1, 1) : 0, jump: rng.chance(0.4) };
         }
-        if (rng.chance(0.01)) g.placePortal(c);
+        if (rng.chance(0.01)) g.shoot(c, rng.pick(SHOTS));
       }
       g.step(inp);
       if (f % 3 || !g.chars.every((ch) => ch.body.mode === ZELDA || (ch.body.grounded && ch.body.vx === 0))) continue;

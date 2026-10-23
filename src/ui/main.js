@@ -7,6 +7,7 @@ import { replaySolution } from '../core/replay.js';
 import { repairShortcut, DEFAULT_TARGETS } from '../core/generator.js';
 import { Game } from '../core/game.js';
 import { MARIO } from '../core/physics.js';
+import { SHOOT_FLOOR } from '../core/portals.js';
 import { SAMPLES } from '../core/samples.js';
 import { drawLevel, bodyForState } from './render.js';
 import { initInput, readInputs } from './input.js';
@@ -329,11 +330,16 @@ $('repairBtn').onclick = () => {
 function startGame() {
   S.game = new Game(S.level);
   S.acc = 0;
+  S.aim = [{ down: false, frames: 0, dir: null }, { down: false, frames: 0, dir: null }];
+  S.shots = [];
   S.watch = null;
   S.anim = null;
 }
 
-$('restart').onclick = startGame;
+$('restart').onclick = () => {
+  startGame();
+  $('restart').blur();
+};
 
 // Play the solver's shortest solution in the real game (scripted inputs, real physics).
 $('watchBtn').onclick = () => {
@@ -347,6 +353,42 @@ $('watchBtn').onclick = () => {
 };
 
 const KEY_LABEL = ['E', 'Enter'];
+// Shooting: the button fires on release. A tap shoots the way you face; hold,
+// press a direction and release to aim (you stand still while holding); hold
+// longer than FLOOR_HOLD frames with no direction to shoot the floor under you.
+const FLOOR_HOLD = 20;
+
+function cardinal(m) {
+  if (Math.abs(m.mx) < 0.5 && Math.abs(m.my) < 0.5) return null;
+  return Math.abs(m.mx) >= Math.abs(m.my) ? { x: Math.sign(m.mx), y: 0 } : { x: 0, y: Math.sign(m.my) };
+}
+
+// The direction a release would shoot in right now.
+function aimDir(c) {
+  const a = S.aim[c];
+  if (a.dir) return a.dir;
+  if (a.frames >= FLOOR_HOLD) return SHOOT_FLOOR;
+  return S.game.chars[c].facing;
+}
+
+function updateShooting(inp) {
+  for (const c of [0, 1]) {
+    const a = S.aim[c];
+    const held = inp.shoot[c];
+    if (held && !a.down) Object.assign(a, { down: true, frames: 0, dir: null });
+    if (!a.down) continue;
+    a.frames++;
+    const d = cardinal(inp.moves[c]);
+    if (d) a.dir = d;
+    inp.moves[c] = { mx: 0, my: 0, jump: false }; // stand still while aiming
+    if (held) continue;
+    a.down = false;
+    const dir = aimDir(c);
+    const r = S.game.shoot(c, dir);
+    S.flash = { c, text: r.sid >= 0 ? `${'AB'[c]} placed a portal.` : r.reason, until: performance.now() + 2000, ok: r.sid >= 0 };
+    if (r.hit) S.shots.push({ c, body: { ...S.game.chars[c].body }, dir, floor: dir === SHOOT_FLOOR, hit: r.hit, sid: r.sid, until: performance.now() + 200 });
+  }
+}
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && S.tab === 'edit') { e.preventDefault(); undo(); }
@@ -367,8 +409,11 @@ function updatePlayInfo() {
   const name = (c) => (c.body.mode === MARIO ? 'platformer' : 'top-down');
   const sk = (sid) => (sid < 0 ? 'not placed' : `on ${S.level.sockets[sid].type} socket ${sid}`);
   const lines = [0, 1].map((c) => {
-    const can = g.placeableSocket(c);
-    const tip = can >= 0 ? `  → press ${KEY_LABEL[c]} to place here` : '';
+    const aiming = S.aim[c].down;
+    const target = g.aimShot(c, aiming ? aimDir(c) : g.chars[c].facing);
+    const tip = aiming
+      ? `  → aiming${aimDir(c) === SHOOT_FLOOR ? ' at the floor' : ''}: release ${KEY_LABEL[c]} to shoot${target.sid >= 0 ? ' (on target)' : ''}`
+      : target.sid >= 0 && target.sid !== g.portals[c] ? `  → tap ${KEY_LABEL[c]} to shoot the socket ahead` : '';
     return `${'AB'[c]}: ${name(g.chars[c])} mode, portal ${sk(g.portals[c])}${tip}`;
   });
   lines.push(g.active() ? 'Portals connected: walk into one to come out of the other.' : 'Portals not connected yet: each player needs one placed.');
@@ -488,7 +533,10 @@ SAMPLES.forEach((s, i) => {
   o.textContent = s.name;
   sel.appendChild(o);
 });
-sel.onchange = () => loadSample(Number(sel.value));
+sel.onchange = () => {
+  loadSample(Number(sel.value));
+  sel.blur();
+};
 const playSel = $('playLevel');
 const curOpt = document.createElement('option');
 curOpt.value = 'current';
@@ -501,6 +549,8 @@ SAMPLES.forEach((s, i) => {
 });
 playSel.onchange = () => {
   if (playSel.value !== 'current') loadSample(Number(playSel.value));
+  // Give the keyboard back to the game: arrow keys would otherwise keep changing the level.
+  playSel.blur();
 };
 function loadSample(i) {
   const s = SAMPLES[i];
@@ -567,6 +617,8 @@ function frame(now) {
   let bodies = null;
   let portals = [-1, -1];
   let hints = [];
+  let aims = [];
+  let shots = [];
   if (S.tab === 'play' && S.anim) {
     const a = S.anim;
     const f = a.frames[Math.min(a.i, a.frames.length - 1)];
@@ -580,17 +632,25 @@ function frame(now) {
     S.acc += dt;
     while (S.acc >= 1 / 60) {
       const inp = readInputs();
-      inp.place.forEach((p, i) => {
-        if (!p) return;
-        const ok = S.game.placePortal(i);
-        S.flash = { c: i, text: ok ? `${'AB'[i]} placed a portal.` : S.game.whyCannotPlace(i), until: performance.now() + 2000, ok };
-      });
+      updateShooting(inp);
       if (!S.game.won) S.game.step(inp.moves);
       S.acc -= 1 / 60;
     }
     bodies = S.game.chars.map((c) => ({ ...c.body, facing: c.facing }));
     portals = S.game.portals;
-    hints = [0, 1].map((c) => ({ c, sid: S.game.placeableSocket(c), key: KEY_LABEL[c] })).filter((h) => h.sid >= 0);
+    // Aim preview while the shoot button is held; otherwise highlight a socket
+    // a tap would hit.
+    aims = [0, 1].filter((c) => S.aim[c].down).map((c) => {
+      const d = aimDir(c);
+      return { c, body: S.game.chars[c].body, dir: d, floor: d === SHOOT_FLOOR, ...S.game.aimShot(c, d) };
+    });
+    hints = [0, 1]
+      .filter((c) => !S.aim[c].down)
+      .map((c) => ({ c, sid: S.game.aimShot(c, S.game.chars[c].facing).sid, key: KEY_LABEL[c] }))
+      .filter((h) => h.sid >= 0 && h.sid !== S.game.portals[h.c]);
+    const tnow = performance.now();
+    S.shots = S.shots.filter((x) => x.until > tnow);
+    shots = S.shots;
     updatePlayInfo();
     S.dirty = true;
   } else if (S.anim) {
@@ -609,7 +669,7 @@ function frame(now) {
   if (S.dirty) {
     const overlays = S.tab === 'play' ? {} : S.overlays;
     const flash = S.tab === 'play' && S.flash && performance.now() < S.flash.until ? S.flash : null;
-    drawLevel(ctx, S.level, S.ts, { analysis: S.analysis, overlays, portals, bodies, hints, flash, selectedEdge: S.selectedEdge, hover: S.tab === 'edit' ? S.hover : null });
+    drawLevel(ctx, S.level, S.ts, { analysis: S.analysis, overlays, portals, bodies, hints, aims, shots, flash, selectedEdge: S.selectedEdge, hover: S.tab === 'edit' ? S.hover : null });
     S.dirty = S.tab === 'play' || !!S.anim;
   }
   requestAnimationFrame(frame);

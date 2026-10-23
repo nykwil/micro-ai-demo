@@ -5,7 +5,7 @@
 //   portal is a socket id or -1 (not yet placed).
 //
 // Actions (any character may act at each step):
-//   place  PlacePortal(s)  walk to the socket's access cell and place own portal
+//   place  PlacePortal(s)  walk somewhere with a straight shot at the socket and shoot
 //   enter  EnterPortal(s)  walk/jump into an active portal, come out of its partner
 //   jump   JumpTo(p)       any Mario move (exact reachability) that comes to rest on platform p
 //
@@ -13,9 +13,9 @@
 // never a separate step. Coming out of a wall portal in Mario mode launches the
 // character; every distinct landing (chosen by air control) is a successor.
 
-import { WALL } from './level.js';
+import { WALL, FLOOR } from './level.js';
 import { ZELDA, MARIO } from './physics.js';
-import { pairActive, partner, blockedCell, transitionMode } from './portals.js';
+import { pairActive, partner, blockedCell, transitionMode, shotLine } from './portals.js';
 import { reachableLabels } from './zelda.js';
 
 const MAX_CHAIN = 4;
@@ -40,6 +40,10 @@ export class PuzzleModel {
       if (p >= 0) this.exitPlatforms.add(p);
     }
     this.access = L.sockets.map((s) => L.accessCell(s)).map((a) => L.idx(a.x, a.y));
+    // Floor cells a Zelda character can shoot each socket from, nearest first:
+    // the open line in front of a wall socket, or a floor socket's own cell.
+    this.shooters = L.sockets.map((s) =>
+      s.type === WALL ? shotLine(L, s).map((c) => L.idx(c.x, c.y)).filter((i) => L.tiles[i] === FLOOR) : [L.idx(s.x, s.y)]);
   }
 
   initialState() {
@@ -118,9 +122,11 @@ export class PuzzleModel {
       n[5] = np1;
       return n;
     };
-    const place = (sid, newLoc) => {
+    // Shooting a portal onto socket sid from cell `from` (Zelda) or from
+    // somewhere on the current platform (Mario).
+    const place = (sid, newLoc, from) => {
       const np = c === 0 ? [sid, p1] : [p0, sid];
-      out.push({ state: withChar(mode, newLoc, np[0], np[1]), action: { c, type: 'place', socket: sid, relocation: own >= 0 } });
+      out.push({ state: withChar(mode, newLoc, np[0], np[1]), action: { c, type: 'place', socket: sid, relocation: own >= 0, from } });
     };
     const enter = (sid, via) => {
       const exit = partner(p0, p1, sid);
@@ -139,9 +145,9 @@ export class PuzzleModel {
       const reach = (cell) => cell === loc || set.has(regions.label[cell]);
       L.sockets.forEach((sk, sid) => {
         if (sid === own || sid === other) return;
-        const a = this.access[sid];
-        if (L.tiles[a] !== 0 /* FLOOR */) return;
-        if (reach(a)) place(sid, a);
+        // Shoot from the nearest reachable floor cell with a clear line to the socket.
+        const from = this.shooters[sid].find((cell) => reach(cell));
+        if (from !== undefined) place(sid, from, from);
       });
       if (active) {
         for (const sid of [p0, p1]) {
@@ -161,7 +167,7 @@ export class PuzzleModel {
     }
 
     // Mario mode: loc is a platform.
-    for (const sid of mario.placeFrom[loc]) if (sid !== own && sid !== other) place(sid, loc);
+    for (const sid of mario.placeFrom[loc]) if (sid !== own && sid !== other) place(sid, loc, null);
     if (active) {
       for (const sid of mario.walkIn[loc]) if (sid === p0 || sid === p1) enter(sid, { kind: 'walk' });
     }

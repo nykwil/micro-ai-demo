@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { Level, SOLID } from '../src/core/level.js';
 import { PHYS, SUBX, SUBY, ZELDA, MARIO, bodyAtCell, makeBody, stepBody } from '../src/core/physics.js';
 import { Game } from '../src/core/game.js';
+import { SHOOT_FLOOR } from '../src/core/portals.js';
 import { MarioAnalyzer, standableCells, extractPlatforms } from '../src/core/mario.js';
 import { movesFromPlatform, simulateMove, restingBody, restRange, outcomeKey } from '../src/core/reach.js';
 import { analyzeLevel, summarize, changeReport } from '../src/core/analysis.js';
@@ -79,17 +80,20 @@ function walkInto(g, ci, input, frames = 90) {
   }
 }
 
+const LEFT = { x: -1, y: 0 };
+
 test('3. Floor → wall activates Mario physics', () => {
   const { L, g } = portalGame();
   const wall = L.sockets.findIndex((s) => s.type === 'wall');
   const floor = L.sockets.findIndex((s) => s.type === 'floor');
-  g.chars[1].body = bodyAtCell(1, 2, ZELDA);
-  assert.ok(g.placePortal(1, wall));
+  // B shoots the wall socket from across the room (the shot passes over the floor socket).
+  g.chars[1].body = bodyAtCell(6, 2, ZELDA);
+  assert.equal(g.shoot(1, LEFT).sid, wall);
+  // A must stand on the floor socket to shoot it.
   g.chars[0].body = bodyAtCell(3, 1, ZELDA);
-  // A must stand on the floor socket to place on it.
-  assert.equal(g.placePortal(0, floor), false);
+  assert.equal(g.shoot(0, SHOOT_FLOOR).sid, -1);
   g.chars[0].body = bodyAtCell(3, 2, ZELDA);
-  assert.ok(g.placePortal(0, floor));
+  assert.equal(g.shoot(0, SHOOT_FLOOR).sid, floor);
   g.chars[0].body = bodyAtCell(3, 1, ZELDA);
   walkInto(g, 0, { my: 1 }, 20);
   assert.equal(g.chars[0].body.mode, MARIO);
@@ -101,14 +105,12 @@ test('4. Wall → floor activates Zelda physics', () => {
   const wall = L.sockets.findIndex((s) => s.type === 'wall');
   const floor = L.sockets.findIndex((s) => s.type === 'floor');
   g.chars[1].body = bodyAtCell(3, 2, ZELDA);
-  g.placePortal(1, floor);
-  g.chars[0].body = bodyAtCell(1, 2, MARIO);
-  g.chars[0].body.mode = MARIO;
-  g.chars[0].body.y = 2 + 1 - PHYS.h;
-  // Put a ledge under the access cell so A can stand there in Mario mode.
+  assert.equal(g.shoot(1, SHOOT_FLOOR).sid, floor);
+  // A stands in Mario mode on a ledge under the wall socket and shoots it.
   L.set(1, 3, SOLID);
+  g.chars[0].body = bodyAtCell(1, 2, MARIO);
   run(L, g.chars[0].body, {}, 5);
-  assert.ok(g.placePortal(0, wall));
+  assert.equal(g.shoot(0, LEFT).sid, wall);
   walkInto(g, 0, { mx: -1 }, 20);
   assert.equal(g.chars[0].body.mode, ZELDA);
   const c = g.chars[0].body;
@@ -268,9 +270,9 @@ test('13. Portal ownership is enforced', () => {
   const { L, g } = portalGame();
   const wall = L.sockets.findIndex((s) => s.type === 'wall');
   g.chars[0].body = bodyAtCell(1, 2, ZELDA);
-  g.chars[1].body = bodyAtCell(1, 2, ZELDA);
-  assert.ok(g.placePortal(1, wall));
-  assert.equal(g.placePortal(0, wall), false, "A cannot take B's socket");
+  g.chars[1].body = bodyAtCell(2, 2, ZELDA);
+  assert.equal(g.shoot(1, LEFT).sid, wall);
+  assert.equal(g.shoot(0, LEFT).sid, -1, "A cannot take B's socket");
   assert.deepEqual(g.portals, [-1, wall]);
   // In the solver every placement only ever changes the acting character's portal.
   const { result } = solveLevel(Level.fromAscii(PORTAL_ROOM));
@@ -336,4 +338,38 @@ test('extra: incremental analysis matches a fresh analysis', () => {
   assert.ok(inc.mario.stats.cached > 0, 'cache reused');
   const key = (a) => a.mario.edges.map((e) => `${e.from}|${e.to}|${e.touched}|${e.measure}`).sort();
   assert.deepEqual(key(inc), key(fresh));
+});
+
+test('shooting: straight cardinal lines to marked sockets only', () => {
+  const L = Level.fromAscii([
+    '##########',
+    '#........#',
+    ']..~..#..#',
+    '#........#',
+    '#.....A..#',
+    '##########',
+  ]);
+  const g = new Game(L);
+  const at = (x, y, mode = ZELDA) => {
+    g.chars[0].body = bodyAtCell(x, y, mode);
+  };
+  at(5, 2);
+  assert.equal(g.shoot(0, LEFT).sid, 0, 'the shot flies over the pit to the socket');
+  g.portals = [-1, -1];
+  at(8, 2);
+  assert.equal(g.shoot(0, LEFT).sid, -1, 'a solid tile in the way stops the shot');
+  at(1, 1);
+  assert.equal(g.shoot(0, { x: 0, y: 1 }).sid, -1, 'up/down shots hit no socket (sockets are on side faces)');
+  at(4, 3);
+  assert.equal(g.shoot(0, LEFT).sid, -1, 'a plain wall takes no portal');
+  // Platformer mode: only while standing.
+  const L2 = Level.fromAscii(['#######', '].....#', '#.....#', '#######']);
+  const g2 = new Game(L2);
+  g2.chars[0].body = bodyAtCell(4, 1, MARIO);
+  g2.chars[0].body.grounded = false;
+  assert.equal(g2.shoot(0, LEFT).sid, -1, 'no shooting in mid-air');
+  assert.match(g2.aimShot(0, LEFT).reason, /Land first/);
+  g2.chars[0].body = bodyAtCell(4, 2, MARIO);
+  assert.equal(g2.shoot(0, LEFT).sid, -1, 'standing a row lower: the socket is not in line');
+  assert.equal(g2.shoot(0, SHOOT_FLOOR).sid, -1, 'no floor shots in platformer mode');
 });

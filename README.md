@@ -27,7 +27,7 @@ npm run build        # static build in dist/
 | --- | --- |
 | **Edit** | Paint floor / solid / pit, exits, starts and sockets. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
 | **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), and **Find shortcut fix**. |
-| **Play** | Real-time game. A: WASD (W/Space jumps), E places portal. B: arrows (Up jumps), Enter or `/` places portal. One gamepad: left stick = A, right stick = B. Two gamepads: one each. |
+| **Play** | Real-time game. A: WASD (W/Space jumps), E shoots. B: arrows (Up jumps), Enter or `/` shoots. One gamepad: left stick = A, right stick = B. Two gamepads: one each. Shots fire on release: tap to shoot the way you face, hold + direction + release to aim, long hold with no direction to shoot the floor under you. **Watch solution** plays the shortest solution in the real game. |
 | **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. |
 
 ## Architecture (`src/core`, no DOM dependencies)
@@ -77,7 +77,7 @@ Analysis takes about 100 ms for a 12×12 level. After an edit, only platforms wh
 
 - **Added a `PIT` tile.** With only floor and solid tiles, Mario reachability is provably a subset of Zelda reachability: both are confined to the same open region, and Mario adds gravity. That would make "Platform Access" impossible. A pit blocks Zelda walking but is open air in Mario mode.
 - **Wall sockets are on left/right faces only.** A socket on a top face would also be a floor that Mario characters stand on, which makes portal placement change the platform graph. This can be added later if needed.
-- **Portals are placed by touch.** A character must stand in the socket's access cell. A Mario character must be grounded and can't use floor sockets.
+- **Portals are shot** in straight cardinal lines, onto marked sockets only. A shot flies over pits and stops at the first solid tile. A Zelda character can shoot from anywhere along a socket's line of fire, and a Mario character only while standing. Floor sockets are shot by aiming at the floor under you, in top-down mode only. The solver works out every spot you can shoot each socket from.
 - **Portal launch speed is a constant** (about 9 tiles/s along the face normal). Entry momentum is not preserved yet.
 - **Mid-jump portal entry is modelled.** A jump that passes an active portal goes through it, so the solver treats it as `EnterPortal`, not `JumpTo`.
 - **Physics units were chosen for exact analysis.** Horizontal speeds come in steps of 1/128 tile per frame (about 0.47 tiles/s), so an analog stick has 11 run speeds each way. Running is about 5.2 tiles/s, ground acceleration about 56 tiles/s² and air control about 28 tiles/s². Vertical motion uses 1/1024 tile.

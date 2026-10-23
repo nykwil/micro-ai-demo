@@ -3,7 +3,7 @@
 
 import { FLOOR_SOCKET, WALL } from './level.js';
 import { PHYS, ZELDA, MARIO, bodyAtCell, stepBody, centerCell, supportCell } from './physics.js';
-import { pairActive, partner, transitionMode, exitBody } from './portals.js';
+import { pairActive, partner, transitionMode, exitBody, traceShot, shotSocket, SHOOT_FLOOR } from './portals.js';
 
 export class Game {
   constructor(level) {
@@ -25,53 +25,51 @@ export class Game {
     return pairActive(this.level, this.portals[0], this.portals[1]);
   }
 
-  // Socket the character is in position to place a portal on, or -1.
-  placeableSocket(ci) {
+  // Where a shot from this character would go. dir is a cardinal {x, y} or
+  // SHOOT_FLOOR. Returns { sid, hit, reason }: sid is the socket the portal
+  // would land on (or -1, with reason saying why), hit the tile the shot stops at.
+  aimShot(ci, dir) {
     const L = this.level;
-    const b = this.chars[ci].body;
+    const ch = this.chars[ci];
+    const b = ch.body;
     const cc = centerCell(b);
-    if (b.mode === MARIO && !b.grounded) return -1;
-    let best = -1;
-    L.sockets.forEach((s, sid) => {
-      if (best >= 0 || sid === this.portals[0] || sid === this.portals[1]) return;
-      if (b.mode === MARIO && s.type === FLOOR_SOCKET) return;
-      const a = L.accessCell(s);
-      if (a.x === cc.x && a.y === cc.y) best = sid;
-    });
-    return best;
+    const res = { sid: -1, hit: null, reason: '' };
+    if (b.mode === MARIO && !b.grounded) {
+      res.reason = 'Land first: you can only shoot while standing.';
+      return res;
+    }
+    if (dir === SHOOT_FLOOR) {
+      res.hit = cc;
+      if (b.mode === MARIO) {
+        res.reason = 'Floor sockets only work in top-down mode.';
+        return res;
+      }
+      res.sid = shotSocket(L, cc.x, cc.y, dir);
+      if (res.sid < 0) res.reason = 'No floor socket under you.';
+    } else {
+      res.hit = traceShot(L, cc.x, cc.y, dir);
+      res.sid = shotSocket(L, cc.x, cc.y, dir);
+      if (res.sid < 0) res.reason = 'The shot hit a wall with no socket.';
+    }
+    if (res.sid >= 0 && res.sid === this.portals[1 - ci]) {
+      res.reason = "That socket holds the other player's portal.";
+      res.sid = -1;
+    }
+    return res;
   }
 
-  // Why the character cannot place a portal right now (for player feedback).
-  whyCannotPlace(ci) {
-    const L = this.level;
-    const b = this.chars[ci].body;
-    const cc = centerCell(b);
-    const here = L.sockets.map((s, sid) => ({ s, sid })).filter(({ s }) => {
-      const a = L.accessCell(s);
-      return a.x === cc.x && a.y === cc.y;
-    });
-    if (!here.length) return 'No portal socket here. Portals only go on the outlined sockets.';
-    if (b.mode === MARIO && !b.grounded) return 'Land first: you cannot place a portal in mid-air.';
-    if (b.mode === MARIO && here.every(({ s }) => s.type === FLOOR_SOCKET)) return 'Floor sockets only work in top-down mode.';
-    if (here.every(({ sid }) => sid === this.portals[1 - ci])) return "That socket holds the other player's portal.";
-    if (here.every(({ sid }) => sid === this.portals[ci])) return 'Your portal is already here.';
-    return 'Cannot place a portal here.';
-  }
-
-  placePortal(ci, sid = this.placeableSocket(ci)) {
-    if (sid < 0) return false;
-    if (sid === this.portals[1 - ci]) return false;
-    const L = this.level;
-    const s = L.sockets[sid];
-    const b = this.chars[ci].body;
-    const cc = centerCell(b);
-    const a = L.accessCell(s);
-    if (a.x !== cc.x || a.y !== cc.y) return false;
-    if (b.mode === MARIO && (s.type === FLOOR_SOCKET || !b.grounded)) return false;
+  // Fire a portal shot. Returns the aimShot result; the portal moves if sid >= 0.
+  shoot(ci, dir) {
+    const ch = this.chars[ci];
+    if (dir !== SHOOT_FLOOR) ch.facing = { x: dir.x, y: dir.y };
+    const r = this.aimShot(ci, dir);
+    const cc = centerCell(ch.body);
+    this.events.push({ frame: this.frame, type: 'shot', c: ci, from: cc, hit: r.hit, dir, socket: r.sid });
+    if (r.sid < 0) return r;
     const relocation = this.portals[ci] >= 0;
-    this.portals[ci] = sid;
-    this.events.push({ frame: this.frame, type: 'place', c: ci, socket: sid, relocation });
-    return true;
+    this.portals[ci] = r.sid;
+    this.events.push({ frame: this.frame, type: 'place', c: ci, socket: r.sid, relocation });
+    return r;
   }
 
   teleport(ci, entrySid) {

@@ -6,9 +6,9 @@
 import { WALL } from './level.js';
 import { PHYS, SUBX, SUBY, ZELDA, MARIO, centerCell, marioVelocity, bodyAtCell } from './physics.js';
 import { Game } from './game.js';
-import { restRange, restingBody, centerRange } from './reach.js';
+import { restRange, restingBody } from './reach.js';
 import { zeldaPath, reachableLabels } from './zelda.js';
-import { blockedCell } from './portals.js';
+import { blockedCell, SHOOT_FLOOR } from './portals.js';
 
 const IDLE = Object.freeze({ mx: 0, my: 0, jump: false });
 
@@ -195,13 +195,19 @@ function makeRunner(level, analysis, game, record) {
     const access = a.socket !== undefined ? level.accessCell(s) : null;
     const accessX = access ? access.x + (1 - PHYS.w) / 2 : 0;
     if (a.type === 'place') {
-      if (body(c).mode === ZELDA) zeldaGoTo(c, level.idx(access.x, access.y));
-      else {
-        const r = centerRange(level, mario.platforms[marioPlatform(c)], access.x, access.y);
-        if (!r) throw new ReplayError(`Socket ${a.socket} cannot be reached from this platform`);
-        marioGoTo(c, Math.floor((r[0] + r[1]) / 2) / SUBX);
+      // Walk to a spot with a clear shot and fire at the socket.
+      let dir;
+      if (body(c).mode === ZELDA) {
+        zeldaGoTo(c, a.from);
+        dir = s.type === WALL ? { x: -s.n, y: 0 } : SHOOT_FLOOR;
+      } else {
+        const X = mario.shootAt[marioPlatform(c)].get(a.socket);
+        if (X === undefined) throw new ReplayError(`Socket ${a.socket} cannot be shot from this platform`);
+        marioGoTo(c, X / SUBX);
+        dir = { x: -s.n, y: 0 };
       }
-      if (!game.placePortal(c, a.socket)) throw new ReplayError(`Could not place portal at socket ${a.socket}`);
+      const r = game.shoot(c, dir);
+      if (r.sid !== a.socket) throw new ReplayError(`Shot at socket ${a.socket} failed: ${r.reason || `hit socket ${r.sid}`}`);
       return;
     }
     if (a.type === 'jump') {
