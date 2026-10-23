@@ -113,21 +113,23 @@ export function drawLevel(ctx, level, ts, opts = {}) {
     ctx.fill();
   };
 
+  // Each connection is drawn with one concrete way to perform it (its witness).
   if (analysis && overlays.jumps) {
     for (const e of analysis.mario.edges) {
       if (e.from === e.to || e.id === selectedEdge) continue;
-      drawPath(e.path, hue(e.from, 0.55), 1.5);
+      drawPath(analysis.mario.witness(e).path, hue(e.from, 0.55), 1.5, e.to < 0 ? [2, 3] : []);
     }
   }
   if (analysis && overlays.launches) {
-    analysis.mario.launches.forEach((outs) => outs.forEach((o) => drawPath(o.path, 'rgba(255,255,255,0.6)', 1.5, [4, 3])));
+    analysis.mario.launches.forEach((outs) => outs.forEach((o) => drawPath(analysis.mario.witness(o).path, 'rgba(255,255,255,0.6)', 1.5, [4, 3])));
   }
   if (analysis && selectedEdge >= 0 && analysis.mario.edges[selectedEdge]) {
     const e = analysis.mario.edges[selectedEdge];
-    ctx.fillStyle = 'rgba(255,255,0,0.35)';
+    const w = analysis.mario.witness(e);
     const p = analysis.mario.platforms[e.from];
-    ctx.fillRect(e.takeoffRange[0] * ts, (p.y + 1) * ts - 4, (e.takeoffRange[1] - e.takeoffRange[0]) * ts, 4);
-    drawPath(e.path, '#ffe14d', 3);
+    ctx.fillStyle = 'rgba(255,225,77,0.6)';
+    ctx.fillRect(w.startX * ts, (p.y + 1) * ts - 5, PHYS.w * ts, 5);
+    drawPath(w.path, '#ffe14d', 3);
   }
 
   // Sockets and portals.

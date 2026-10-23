@@ -10,7 +10,7 @@
 // a plain wall.
 
 import { FLOOR, WALL } from './level.js';
-import { PHYS, ZELDA, MARIO, bodyAtCell } from './physics.js';
+import { PHYS, SUBX, ZELDA, MARIO, bodyAtCell } from './physics.js';
 
 export function pairActive(level, p0, p1) {
   if (p0 < 0 || p1 < 0) return false;
@@ -54,8 +54,9 @@ export function exitBody(level, exitSid, mode) {
   const c = level.accessCell(s);
   if (mode === ZELDA) return bodyAtCell(c.x, c.y, ZELDA);
   const b = bodyAtCell(c.x, c.y, MARIO);
-  b.x = s.n > 0 ? s.x + 1 + 0.01 : s.x - PHYS.w - 0.01;
-  b.vx = s.n * PHYS.launchSpeed;
+  const gap = PHYS.exitGap / SUBX;
+  b.x = s.n > 0 ? s.x + 1 + gap : s.x - PHYS.w - gap;
+  b.vx = (s.n * PHYS.launchSpeed) / SUBX;
   b.grounded = false;
   b.jumpWasDown = true;
   return b;

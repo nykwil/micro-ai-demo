@@ -3,12 +3,12 @@
 
 import { WALL } from './level.js';
 import { MARIO } from './physics.js';
-import { LAUNCH_POLICIES } from './mario.js';
 import { partner } from './portals.js';
 
-// A trajectory found by this many sampled (takeoff, input) variants or more is
+// A move whose successful landing positions add up to this many variants
+// (eighths of a tile, summed over every speed and jump-hold that works) is
 // considered forgiving to execute.
-const COMFORT_VARIANTS = 12;
+const COMFORT_VARIANTS = 24;
 
 export function computeMetrics(level, analysis, result, replay = null) {
   if (result.status !== 'solved') return { solved: false, status: result.status };
@@ -47,7 +47,7 @@ export function computeMetrics(level, analysis, result, replay = null) {
       }
       for (const step of a.chain || []) {
         const o = mario.launches[step.sid][step.launch];
-        tolerances.push(o.variants / (LAUNCH_POLICIES.length / 2));
+        tolerances.push(o.variants / COMFORT_VARIANTS);
         if (step.via !== undefined) countTransition(step.via, partner(p0, p1, step.via));
       }
     }

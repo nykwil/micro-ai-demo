@@ -1,11 +1,13 @@
-// The 16 required tests from the design plan (section 14), plus a few extras.
+// The 16 required tests from the design plan (section 14), plus tests that the
+// exact reachability analysis and the solver are sound and complete.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Level, SOLID } from '../src/core/level.js';
-import { PHYS, ZELDA, MARIO, bodyAtCell, makeBody, stepBody } from '../src/core/physics.js';
+import { PHYS, SUBX, SUBY, ZELDA, MARIO, bodyAtCell, makeBody, stepBody } from '../src/core/physics.js';
 import { Game } from '../src/core/game.js';
-import { JUMP_POLICIES, simulate, jumpTable, MarioAnalyzer } from '../src/core/mario.js';
+import { MarioAnalyzer, standableCells, extractPlatforms } from '../src/core/mario.js';
+import { movesFromPlatform, simulateMove, restingBody, restRange, outcomeKey } from '../src/core/reach.js';
 import { analyzeLevel, summarize, changeReport } from '../src/core/analysis.js';
 import { solve, PuzzleModel } from '../src/core/solver.js';
 import { replaySolution } from '../src/core/replay.js';
@@ -20,7 +22,14 @@ const solveLevel = (L) => {
   const analysis = analyzeLevel(L);
   return { analysis, result: solve(analysis) };
 };
-const policy = (match) => JUMP_POLICIES.findIndex((p) => Object.entries(match).every(([k, v]) => p[k] === v));
+// Rest cells reachable from the platform containing cell (x, y), optionally
+// limited to some vertical profiles (0 = walk off, 1 + h = jump held h frames).
+function reachableCells(L, x, y, profiles = null) {
+  const { platforms, platformOf } = extractPlatforms(L, standableCells(L));
+  const pid = platformOf[L.idx(x, y)];
+  const out = movesFromPlatform(L, platforms, pid, { profiles });
+  return new Set([...out.values()].filter((o) => o.kind === 'land').map((o) => `${o.cell[0]},${o.cell[1]}`));
+}
 
 // Two characters, one floor socket, one wall socket on the left border.
 const PORTAL_ROOM = [
@@ -133,24 +142,19 @@ test('5. Wall → wall preserves the current mode', () => {
 });
 
 test('6. Variable-height jumps produce different reachable destinations', () => {
-  // Ledges 1 and 2 tiles high to the right of the takeoff cell.
-  const L = Level.fromAscii([
-    '########',
-    '#......#',
-    '#......#',
-    '#.....##',
-    '#...#.##',
-    '#.A.####',
-    '########',
-  ]);
-  const shortHop = policy({ kind: 'jump', dir: 1, hold: 0, release: -1 });
-  const fullJump = policy({ kind: 'jump', dir: 1, hold: 15, release: -1 });
-  const start = bodyAtCell(3, 5, MARIO);
-  const a = simulate(L, start, JUMP_POLICIES[shortHop]);
-  const b = simulate(L, start, JUMP_POLICIES[fullJump]);
-  const cellOf = (r) => ({ x: r.land % L.width, y: Math.floor(r.land / L.width) });
-  assert.notEqual(a.land, b.land);
-  assert.ok(cellOf(b).y < cellOf(a).y, 'holding jump reaches a higher ledge');
+  // A wide floor (row 5) and a pillar of height h at x = 6; its top cell is (6, 5 - h).
+  const pillar = (h) => {
+    const rows = ['##########', '#........#', '#........#', '#........#', '#........#', '#A.......#', '##########'].map((r) => [...r]);
+    for (let y = 6 - h; y <= 5; y++) rows[y][6] = '#';
+    return Level.fromAscii(rows.map((r) => r.join('')));
+  };
+  const top = (h) => `6,${5 - h}`;
+  const tap = (h) => reachableCells(pillar(h), 1, 5, [1]).has(top(h)); // jump released immediately
+  const full = (h) => reachableCells(pillar(h), 1, 5, [16]).has(top(h)); // held as long as possible
+  assert.ok(tap(1), 'a tap reaches a one-tile ledge');
+  assert.ok(!tap(2), 'a tap cannot reach a two-tile ledge');
+  assert.ok(full(2), 'holding jump reaches a two-tile ledge');
+  assert.ok(!reachableCells(pillar(3), 1, 5).has(top(3)), 'nothing reaches three tiles up');
 });
 
 test('7. Walking off a ledge is handled by JumpTo', () => {
@@ -162,62 +166,56 @@ test('7. Walking off a ledge is handled by JumpTo', () => {
     '#.....#',
     '#######',
   ]);
-  const walk = policy({ kind: 'walk', dir: 1 });
-  const r = simulate(L, bodyAtCell(1, 2, MARIO), JUMP_POLICIES[walk]);
-  assert.equal(Math.floor(r.land / L.width), 4, 'walked off the ledge and fell to the floor');
+  // Walking off (profile 0) alone already reaches the floor below.
+  assert.ok(reachableCells(L, 1, 2, [0]).has('3,4'));
   const a = analyzeLevel(L);
   const high = a.mario.platformOf[L.idx(1, 2)];
   const low = a.mario.platformOf[L.idx(3, 4)];
-  assert.ok(a.mario.edges.some((e) => e.from === high && e.to === low), 'single JumpTo edge covers the fall');
+  assert.ok(a.mario.edges.some((e) => e.from === high && e.to === low), 'one JumpTo edge covers the fall');
 });
 
-test('8. The jump table identifies reachable tile offsets', () => {
-  const { offsets } = jumpTable();
-  for (const k of ['1,0', '2,0', '3,0', '4,0', '1,-1', '1,-2', '0,-2', '-1,-1', '2,2']) assert.ok(offsets.has(k), `offset ${k} reachable`);
-  for (const k of offsets.keys()) {
-    const [, dy] = k.split(',').map(Number);
-    assert.ok(dy > -3, `no jump clears three tiles (found ${k})`);
-  }
-  const fullOnly = offsets.get('1,-2').every((e) => JUMP_POLICIES[e.policy].hold >= 6);
-  assert.ok(fullOnly, 'two-tile climbs need a held jump');
+test('8. Reachable tile offsets match the movement limits', () => {
+  // One-tile takeoff pillar at (1,7) and a one-tile target pillar at offset (dx, dy).
+  const reach = (dx, dy) => {
+    const rows = [];
+    for (let y = 0; y < 10; y++) rows.push([...('#' + '~'.repeat(12) + '#')]);
+    rows[9] = [...'#'.repeat(14)];
+    for (let y = 8; y <= 8; y++) rows[y][1] = '#';
+    rows[7][1] = '.';
+    const tx = 1 + dx;
+    const ty = 7 + dy;
+    rows[ty][tx] = '.';
+    for (let y = ty + 1; y <= 8; y++) rows[y][tx] = '#';
+    const L = Level.fromAscii(rows.map((r) => r.join('')));
+    return reachableCells(L, 1, 7).has(`${tx},${ty}`);
+  };
+  // From a one-tile ledge (no run-up beyond the tile): up to 2 tiles up, and up
+  // to 4 tiles across going up or 5 across on the level or lower.
+  for (const [dx, dy] of [[1, 0], [3, 0], [5, 0], [1, -1], [4, -1], [1, -2], [4, -2], [5, 1]]) assert.ok(reach(dx, dy), `offset (${dx}, ${dy}) is reachable`);
+  for (const [dx, dy] of [[1, -3], [2, -3], [5, -1], [5, -2], [6, 0], [6, 1], [8, 0]]) assert.ok(!reach(dx, dy), `offset (${dx}, ${dy}) is out of reach`);
 });
 
-test('9. Obstacles invalidate otherwise valid jump templates', () => {
+test('9. Obstacles invalidate otherwise valid jumps', () => {
   const open = Level.fromAscii([
     '########',
     '#......#',
     '#......#',
     '#......#',
-    '#A~~E..#',
-    '########',
-  ]);
-  const walled = Level.fromAscii([
-    '########',
     '#......#',
-    '#..#...#',
-    '#..#...#',
-    '#A~#E..#',
+    '##..####',
     '########',
   ]);
-  assert.ok(jumpTable().offsets.has('3,0'));
-  const from = (L, a) => a.mario.platformOf[L.idx(1, 4)];
-  const to = (L, a) => a.mario.platformOf[L.idx(4, 4)];
-  const a1 = analyzeLevel(open);
-  // In the open level everything on row 4 is one platform; in the walled level
-  // the template's candidate exists but no validated trajectory crosses.
-  assert.equal(from(open, a1), to(open, a1));
-  const a2 = analyzeLevel(walled);
-  const f = from(walled, a2);
-  const t = to(walled, a2);
-  assert.ok(a2.mario.candidates.has(`${f}>${t}`), 'jump table proposes the connection');
-  assert.ok(!a2.mario.edges.some((e) => e.from === f && e.to === t), 'collision check rejects it');
+  const walled = open.clone();
+  for (let y = 1; y <= 4; y++) walled.set(3, y, SOLID);
+  assert.ok(reachableCells(open, 1, 4).has('4,4'), 'the gap can be jumped');
+  assert.ok(!reachableCells(walled, 1, 4).has('4,4'), 'a wall in the way blocks every jump');
 });
 
 test('10. Equivalent trajectories do not create redundant solver states', () => {
   const L = Level.fromAscii(SAMPLES[1].rows);
   const a = analyzeLevel(L);
   const keys = a.mario.edges.map((e) => `${e.from}|${e.to}|${e.touched}`);
-  assert.equal(new Set(keys).size, keys.length, 'one edge per distinct outcome');
+  assert.equal(new Set(keys).size, keys.length, 'one edge per distinct (destination, portals touched)');
   assert.ok(a.mario.edges.some((e) => e.variants > 10), 'many trajectories collapse into one edge');
   const model = new PuzzleModel(a);
   const p = a.mario.platformOf[L.idx(6, 8)];
@@ -336,6 +334,6 @@ test('extra: incremental analysis matches a fresh analysis', () => {
   const inc = analyzeLevel(edited, analyzer);
   const fresh = analyzeLevel(edited);
   assert.ok(inc.mario.stats.cached > 0, 'cache reused');
-  const key = (a) => a.mario.edges.map((e) => `${e.from}|${e.to}|${e.touched}|${e.variants}`).sort();
+  const key = (a) => a.mario.edges.map((e) => `${e.from}|${e.to}|${e.touched}|${e.measure}`).sort();
   assert.deepEqual(key(inc), key(fresh));
 });

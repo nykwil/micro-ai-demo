@@ -7,7 +7,7 @@
 // Actions (any character may act at each step):
 //   place  PlacePortal(s)  walk to the socket's access cell and place own portal
 //   enter  EnterPortal(s)  walk/jump into an active portal, come out of its partner
-//   jump   JumpTo(p)       follow a validated Mario trajectory to platform p
+//   jump   JumpTo(p)       any Mario move (exact reachability) that comes to rest on platform p
 //
 // Zelda walking inside a region is folded into the action it leads to, so it is
 // never a separate step. Coming out of a wall portal in Mario mode launches the
@@ -73,7 +73,8 @@ export class PuzzleModel {
     launches.forEach((o, li) => {
       const hit = o.touched.find((sid) => sid === p0 || sid === p1);
       if (hit === undefined) {
-        out.push({ mode: MARIO, loc: o.to, chain: [{ launch: li, sid: exitSid }] });
+        // A launch that only reaches a portal face does nothing without a portal there.
+        if (o.to >= 0) out.push({ mode: MARIO, loc: o.to, chain: [{ launch: li, sid: exitSid }] });
         return;
       }
       const next = partner(p0, p1, hit);
@@ -153,10 +154,7 @@ export class PuzzleModel {
     }
 
     // Mario mode: loc is a platform.
-    L.sockets.forEach((sk, sid) => {
-      if (sid === own || sid === other || sk.type !== WALL) return;
-      if (mario.platformOf[this.access[sid]] === loc) place(sid, loc);
-    });
+    for (const sid of mario.placeFrom[loc]) if (sid !== own && sid !== other) place(sid, loc);
     if (active) {
       for (const sid of mario.walkIn[loc]) if (sid === p0 || sid === p1) enter(sid, { kind: 'walk' });
     }
@@ -164,9 +162,27 @@ export class PuzzleModel {
       const e = mario.edges[eid];
       const hit = active ? e.touched.find((sid) => sid === p0 || sid === p1) : undefined;
       if (hit !== undefined) enter(hit, { kind: 'jump', edge: eid });
-      else if (e.to !== loc) out.push({ state: withChar(MARIO, e.to), action: { c, type: 'jump', edge: eid, to: e.to } });
+      else if (e.to >= 0 && e.to !== loc) out.push({ state: withChar(MARIO, e.to), action: { c, type: 'jump', edge: eid, to: e.to } });
     }
   }
+}
+
+// Every state reachable from the start, with the actions between them (no
+// goal test). Used by tests and audits; the graph can be large.
+export function exploreAll(analysis, { maxStates = 200000 } = {}) {
+  const model = new PuzzleModel(analysis);
+  const start = model.initialState();
+  const states = new Map([[pack(start), start]]);
+  const queue = [start];
+  for (let i = 0; i < queue.length && states.size <= maxStates; i++) {
+    for (const { state } of model.successors(queue[i])) {
+      const k = pack(state);
+      if (states.has(k)) continue;
+      states.set(k, state);
+      queue.push(state);
+    }
+  }
+  return { model, states: [...states.values()], complete: states.size <= maxStates };
 }
 
 export function solve(analysis, { maxStates = 400000 } = {}) {

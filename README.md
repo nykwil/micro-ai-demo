@@ -25,7 +25,7 @@ npm run build        # static build in dist/
 
 | Tab | What it does |
 | --- | --- |
-| **Edit** | Paint floor / solid / pit, exits, starts and sockets. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump trajectories (click one to see its takeoff range) and portal launches. Supports undo, JSON export/import and ASCII copy. |
+| **Edit** | Paint floor / solid / pit, exits, starts and sockets. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
 | **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), and **Find shortcut fix**. |
 | **Play** | Real-time game. A: WASD (W/Space jumps), E places portal. B: arrows (Up jumps), Enter or `/` places portal. One gamepad: left stick = A, right stick = B. Two gamepads: one each. |
 | **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. |
@@ -35,10 +35,11 @@ npm run build        # static build in dist/
 | Module | Plan section |
 | --- | --- |
 | `level.js` | Shared geometry, sockets, JSON/ASCII formats |
-| `physics.js` | One fixed-step body update used by gameplay, analysis and replay (§5.5) |
+| `physics.js` | One fixed-step, integer-exact body update used by gameplay, analysis and replay (§5.5) |
 | `portals.js` | Transition rules, exit placement, launch velocity |
 | `zelda.js` | Flood-fill regions per floor-portal configuration (§4.1) |
-| `mario.js` | Platforms, policy-based trajectory simulation, jump-template table, incremental cache (§4.2, §5, §6) |
+| `reach.js` | Exact Mario reachability for any controller input, witnesses, reference simulation (§4.2, §5, §6) |
+| `mario.js` | Platforms, platform graph for the solver, incremental cache |
 | `analysis.js` | Combined analysis, summary, geometry-change report (§12) |
 | `solver.js` | Two-character BFS over `[mode, loc]×2 + portals`; solved / unsolvable / timeout (§7) |
 | `metrics.js` | Actions, parallel steps, relocations, switches, cooperation, alternation, diversity, branching, tolerance (§8) |
@@ -49,25 +50,75 @@ npm run build        # static build in dist/
 
 ### How Mario reachability works
 
-Each standable cell is a takeoff point, sampled at three positions. From each one, 69 control policies are simulated with the real physics: walk-off, standing and running jumps with 0/3/6/10/15 frames of jump hold, and stick release at several times. Each trajectory records the wall faces it pushes against. Outcomes are grouped per `(from platform, to platform, sockets touched)` into one `JumpTo` edge. That edge keeps a representative execution plan, the takeoff and landing ranges, the jump-hold range, and a variant count used for execution tolerance. Falling is just a policy with no jump.
+The analysis is exact rather than sampled. It finds every place a Mario-mode character can get to with **any** controller input: every analog stick value on every frame, and every way of pressing and holding jump.
 
-The free-space jump-template table (`jumpTable()`) lists the grid offsets a jump can reach. It proposes candidate connections, and simulation against the actual level validates them. The Edit tab shows both counts.
+This is possible because the physics is integer-exact. Horizontal positions are whole multiples of 1/128 tile, vertical positions of 1/1024 tile, and every speed is a whole number of those units per frame. The vertical motion of a move doesn't depend on the stick, only on when jump is pressed and released. So a takeoff has just 17 vertical profiles (walk off, or jump and hold 0–15 frames), and the only other state is horizontal position and speed (`X`, `vx`). For each platform and each profile, `reach.js` tracks frame by frame the exact set of reachable (`X`, `vx`), stored as integer intervals of `X` for each `vx`. It applies the physics' own collision rules to whole intervals at once:
 
-Every trajectory caches the bounding box of the tiles it touched, so after an edit only nearby trajectories are re-simulated.
+- Positions that hit a wall stop there and keep falling. If the wall face holds a portal socket, that's also recorded as a possible portal entry.
+- Positions that bump a ceiling become a fall from that height.
+- Positions that land slide to a stop with the stick released.
+
+The velocity rule is taken directly from `physics.marioVelocity`, and the vertical profiles are recorded by running the real physics. So the analysis and the game share the same rules rather than two hand-written copies.
+
+A **move** goes from rest to rest:
+
+1. Stand anywhere on a platform, walk or run with any input.
+2. Jump with any hold, or walk off the edge.
+3. Steer freely in the air.
+4. After the first landing, let go and slide to a stop.
+
+Portal launches are moves that start from the fixed state a character has when it comes out of a wall portal. Each distinct outcome becomes a solver edge: the platform it comes to rest on (or the portal socket it flies into), plus the socket faces it touches on the way, in order, so the solver knows when an active portal would take the character somewhere else instead.
+
+Every outcome can produce a **witness**: a start position and an input for every frame, traced back through the stored frame sets. Replay and the jump overlay use witnesses, and tests check that each one reproduces its outcome in the real physics.
+
+Analysis takes about 100 ms for a 12×12 level. After an edit, only platforms whose analysis looked at a changed row are redone.
 
 ## Design decisions and deviations from the plan
 
 - **Added a `PIT` tile.** With only floor and solid tiles, Mario reachability is provably a subset of Zelda reachability: both are confined to the same open region, and Mario adds gravity. That would make "Platform Access" impossible. A pit blocks Zelda walking but is open air in Mario mode.
 - **Wall sockets are on left/right faces only.** A socket on a top face would also be a floor that Mario characters stand on, which makes portal placement change the platform graph. This can be added later if needed.
 - **Portals are placed by touch.** A character must stand in the socket's access cell. A Mario character must be grounded and can't use floor sockets.
-- **Portal launch speed is a constant** (9 tiles/s along the face normal). Entry momentum is not preserved yet.
+- **Portal launch speed is a constant** (about 9 tiles/s along the face normal). Entry momentum is not preserved yet.
 - **Mid-jump portal entry is modelled.** A jump that passes an active portal goes through it, so the solver treats it as `EnterPortal`, not `JumpTo`.
+- **Physics units were chosen for exact analysis.** Horizontal speeds come in steps of 1/128 tile per frame (about 0.47 tiles/s), so an analog stick has 11 run speeds each way. Running is about 5.2 tiles/s, ground acceleration about 56 tiles/s² and air control about 28 tiles/s². Vertical motion uses 1/1024 tile.
+- **A Mario move ends at its first landing.** The character then comes to rest before the next move, so speed carried from one landing straight into the next jump isn't a separate move. The random-play audit below, which keeps steering and jumping through landings, hasn't found any situation that this leaves out.
 - **Walking inside a Zelda region is folded into the next action** and is not a separate step. Zelda locations are exact cells, because an active floor portal is a hole that can split regions.
 - **Characters do not collide with each other.**
-- **"Unsolvable" is relative to the sampled control policies.** The solver is sound: every solution it returns replays in the real physics. It is not complete for frame-perfect inputs outside the sampled set.
-- **Execution tolerance is a heuristic.** It is the number of sampled variants that reach the same outcome (12 or more counts as forgiving).
+- **Execution tolerance is a heuristic.** For each move used, it counts how many landing positions (in eighths of a tile, summed over every speed and jump hold that works) produce the same result. 24 or more counts as forgiving.
 
 ## Verification
 
-- `npm test`: the 16 tests from §14, plus a test that a timeout is reported as inconclusive and a test that incremental analysis matches fresh analysis.
-- Stress check during development: 322 solutions from randomly mutated levels and 40 from fully generated levels were replayed through gameplay physics, with no mismatches.
+The claims are that the analysis finds everything (complete), everything it finds really works (sound), and the solver agrees with the game. Each is checked against the real physics in `game.js` and `physics.js`.
+
+`npm test` (about 30 s) runs the 16 tests from §14 plus:
+
+- the physics arithmetic stays exact, and moves are identical when shifted by whole tiles;
+- every reachable outcome's witness reproduces it in the real physics (including a level with a socket on every wall face);
+- random analog input never reaches anything the analysis missed;
+- every transition of the solver's state graph is executed in the real game from that state and ends where the solver says;
+- shortest solutions agree with an independent breadth-first search;
+- random two-player play, started from random reachable states, never reaches a situation outside the solver's model;
+- a standing character can stop at any position on its platform (the "start anywhere" assumption).
+
+For deeper searches, the audit scripts run the same checks at larger scale:
+
+```
+node scripts/audit-reach.js 40 60000            # witnesses + random-input search
+node scripts/audit-reach.js 16 30000 allsockets # same, with a socket on every wall face
+node scripts/audit-solver.js 8 400              # every solver transition, executed in the game
+node scripts/audit-play.js 14 400000            # random play vs the solver model
+```
+
+Results during development:
+
+| Audit | Result |
+| --- | --- |
+| Witnesses replayed | 3,386 across 40 levels, plus 87,813 with a socket on every face. No mismatches. |
+| Random analog moves | 2.2 M plus 445 k. Nothing missed. |
+| Solver transitions executed in the game | 12,098. All ended in the predicted state. |
+| Random-play checks | 913 k. All covered by the model. |
+
+The audits caught two real bugs, both now fixed:
+
+- The first version of the analysis dropped moves that touch walls in mid-air, such as falling down a shaft after a launch.
+- The solver didn't allow placing a portal while standing on the overhanging edge of a platform, which the game allows.

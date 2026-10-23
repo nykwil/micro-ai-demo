@@ -246,9 +246,9 @@ export function repairShortcut(ev, targets, motifs, analyzer) {
     }
   };
   for (const a of result.actions) {
-    if (a.type === 'jump') addPath(mario.edges[a.edge].path);
-    if (a.type === 'enter' && a.via && a.via.kind === 'jump') addPath(mario.edges[a.via.edge].path);
-    for (const step of a.chain || []) addPath(mario.launches[step.sid][step.launch].path);
+    if (a.type === 'jump') addPath(mario.witness(mario.edges[a.edge]).path);
+    if (a.type === 'enter' && a.via && a.via.kind === 'jump') addPath(mario.witness(mario.edges[a.via.edge]).path);
+    for (const step of a.chain || []) addPath(mario.witness(mario.launches[step.sid][step.launch]).path);
   }
   let best = null;
   for (const c of cells) {

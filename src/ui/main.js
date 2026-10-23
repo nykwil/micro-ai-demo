@@ -1,5 +1,5 @@
 import { Level, FLOOR, SOLID, PIT, WALL, FLOOR_SOCKET } from '../core/level.js';
-import { MarioAnalyzer, JUMP_POLICIES } from '../core/mario.js';
+import { MarioAnalyzer } from '../core/mario.js';
 import { analyzeLevel, summarize, changeReport } from '../core/analysis.js';
 import { solve, describeAction } from '../core/solver.js';
 import { computeMetrics } from '../core/metrics.js';
@@ -208,19 +208,21 @@ function renderAnalysis() {
   const lines = [
     `Zelda connected regions: ${s.zeldaRegions}`,
     `Mario platforms:         ${s.platforms}`,
-    `Jump connections:        ${s.jumpConnections} validated / ${s.jumpCandidates} jump-table candidates`,
+    `Jump connections:        ${s.jumpConnections} (exact, any controller input)`,
+    `Mid-air portal entries:  ${s.portalEntries}`,
     `Portal launch outcomes:  ${s.portalLaunches}`,
-    `Trajectories:            ${m.stats.simulated} simulated, ${m.stats.cached} reused from cache`,
+    `Reachability:            ${m.stats.computed} platforms/launches analysed, ${m.stats.cached} reused (${m.stats.ms.toFixed(0)} ms)`,
     `Analysis time:           ${a.ms.toFixed(0)} ms`,
   ];
   $('analysisStats').textContent = lines.join('\n');
   const list = $('edgeList');
   list.innerHTML = '';
-  m.edges.filter((e) => e.from !== e.to).forEach((e) => {
+  m.edges.filter((e) => e.from !== e.to || e.to < 0).forEach((e) => {
     const div = document.createElement('div');
     div.className = 'item' + (e.id === S.selectedEdge ? ' sel' : '');
-    const p = JUMP_POLICIES[e.plan.policy];
-    div.textContent = `P${e.from} → P${e.to}  ${p.kind}${p.kind !== 'walk' ? ` hold ${e.holdRange[0]}–${e.holdRange[1]}f` : ''}  takeoff x ${e.takeoffRange[0].toFixed(2)}–${e.takeoffRange[1].toFixed(2)}  variants ${e.variants}${e.touched.length ? `  touches s${e.touched.join(',s')}` : ''}`;
+    const dest = e.to < 0 ? `into portal socket s${e.touched[e.touched.length - 1]}` : `P${e.to}`;
+    const touches = e.to < 0 ? e.touched.slice(0, -1) : e.touched;
+    div.textContent = `P${e.from} → ${dest}  tolerance ${e.variants}${touches.length ? `  touches s${touches.join(',s')}` : ''}`;
     div.onclick = () => {
       S.selectedEdge = S.selectedEdge === e.id ? -1 : e.id;
       renderAnalysis();
@@ -456,6 +458,7 @@ SAMPLES.forEach((s, i) => {
 sel.onchange = () => loadSample(Number(sel.value));
 function loadSample(i) {
   const s = SAMPLES[i];
+  sel.value = String(i);
   loadLevel(Level.fromAscii(s.rows, s.name));
 }
 $('newLevel').onclick = () => {

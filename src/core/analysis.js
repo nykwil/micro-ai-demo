@@ -22,12 +22,12 @@ export function analyzeLevel(level, analyzer = new MarioAnalyzer()) {
 
 export function summarize(analysis, solveResult) {
   const { zelda, mario } = analysis;
-  const jumps = new Set(mario.edges.filter((e) => e.from !== e.to).map((e) => `${e.from}>${e.to}`));
+  const jumps = new Set(mario.edges.filter((e) => e.to >= 0 && e.from !== e.to).map((e) => `${e.from}>${e.to}`));
   return {
     zeldaRegions: zelda.regions.length,
     platforms: mario.platforms.length,
     jumpConnections: jumps.size,
-    jumpCandidates: mario.candidates.size,
+    portalEntries: mario.edges.filter((e) => e.to < 0).length,
     portalLaunches: mario.launches.reduce((n, l) => n + l.length, 0),
     shortest: solveResult && solveResult.status === 'solved' ? solveResult.minActions : null,
     status: solveResult ? solveResult.status : null,
