@@ -483,6 +483,7 @@ $('generateBtn').onclick = () => {
       coopDeps: num('gCoop'),
       alternationDepth: num('gAlt'),
       maxDifficulty: $('gDiff').value,
+      allowFailConditions: $('gAllowFail').checked,
     },
   };
   if (worker) worker.terminate();
@@ -522,7 +523,7 @@ function renderCandidates() {
     const div = document.createElement('div');
     div.className = 'item' + (S.candidate === c ? ' sel' : '');
     div.innerHTML = `#${c.batchIndex} seed ${c.seed} <span class="tag ${c.accepted ? 'ok' : 'no'}">${c.accepted ? 'accepted' : `score ${c.score}`}</span><br>` +
-      (m.solved ? `${m.minActions} actions · ${m.physicsSwitches} switches · ${m.portalRelocations} relocations · coop ${m.coopDeps} · alternation ${m.alternationDepth} · ${m.executionDifficulty}` : m.status);
+      (m.solved ? `${m.minActions} actions · ${m.physicsSwitches} switches · ${m.portalRelocations} relocations · coop ${m.coopDeps} · alternation ${m.alternationDepth} · ${m.executionDifficulty} · ${m.failMoves ? `${m.failMoves} fail moves` : 'no fail moves'}` : m.status);
     div.onclick = () => {
       const L = Level.fromJSON(c.level);
       L.name = `Generated #${c.batchIndex} (seed ${c.seed})`;

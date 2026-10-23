@@ -28,7 +28,21 @@ npm run build        # static build in dist/
 | **Edit** | Paint floor / solid / pit, exits, starts and sockets (shootable surfaces, drawn light blue). Each level can turn on tutorial hints that show where a tap would place a portal. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
 | **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), **Find shortcut fix**, and **Fail conditions**: every move that soft-locks the level (no way left to get both characters to the exit), with a view of the stuck situation. |
 | **Play** | Real-time game. A: WASD (W/Space jumps), E shoots. B: arrows (Up jumps), Enter or `/` shoots. One gamepad: left stick = A, right stick = B. Two gamepads: one each. Shots fire on release: tap to shoot the way you face, hold + direction + release to aim, long hold with no direction to shoot the floor under you. **Watch solution** plays the shortest solution in the real game. |
-| **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. |
+| **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. By rule, generated levels have **no fail conditions**: there's no move after which the exit becomes unreachable. A checkbox allows them. |
+
+## Portal transitions
+
+Going through a portal is one of five trips. Floor → floor is inactive, and XY characters can't enter floor portals, since a floor tile is an XZ surface. Each trip has one rule for where you come out and how you start moving. The analysis and the solver follow the same rule, so every outcome of a trip is explored exactly.
+
+| # | Trip | Mode | How it resolves today | Status |
+| --- | --- | --- | --- | --- |
+| 1 | wall → wall | XZ → XZ | Appear centred on the tile in front of the exit, standing still, facing out. If that tile is a pit, the trip is refused and the portal acts as a wall. | settled |
+| 2 | wall → wall | XY → XY | Appear touching the exit face, feet level with the bottom of its tile, moving out at a fixed ~8.9 tiles/s (entry speed is not carried through), then fall with air control. | open: carry your actual speed through? |
+| 3 | floor → wall | XZ → XY | Same as 2: launched out of the wall at ~8.9 tiles/s. | open: drop out with no speed instead? |
+| 4 | wall → floor | XY → XZ | Appear centred on the floor portal's tile (standing on the hole), still. The portal only fires when you step *onto* it, so you don't fall straight back in; you must walk off. | open: step off automatically onto a neighbouring tile? |
+| 5 | wall → floor | XZ → XY | Appear in the floor portal's tile at rest, which in side view is open air, and fall straight down. | settled |
+
+Planned for all of them: a short (~0.4 s) take-over with a portal animation, during which the player has no control.
 
 ## Architecture (`src/core`, no DOM dependencies)
 

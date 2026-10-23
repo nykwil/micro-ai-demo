@@ -11,7 +11,7 @@ import { Level, FLOOR, SOLID, PIT, WALL, FLOOR_SOCKET, socketKey } from './level
 import { Rng, hashSeed } from './rng.js';
 import { MarioAnalyzer } from './mario.js';
 import { analyzeLevel } from './analysis.js';
-import { solve, describeAction } from './solver.js';
+import { solve, describeAction, findFailures } from './solver.js';
 import { computeMetrics, DIFFICULTY_RANK } from './metrics.js';
 import { expandGrammar, motifReport, treeToText } from './grammar.js';
 import { replaySolution } from './replay.js';
@@ -24,6 +24,8 @@ export const DEFAULT_TARGETS = Object.freeze({
   coopDeps: 1,
   alternationDepth: 2,
   maxDifficulty: 'medium',
+  // Rule: a level must never become unwinnable, whatever the players do.
+  allowFailConditions: false,
 });
 
 // ---------------------------------------------------------------------------
@@ -224,6 +226,15 @@ export function evaluate(level, targets, motifs, analyzer, { maxStates = 150000 
     if (DIFFICULTY_RANK[metrics.executionDifficulty] > DIFFICULTY_RANK[targets.maxDifficulty]) score += 5;
     motifs_ = motifReport(motifs, { level, analysis, result, metrics });
     score += motifs_.filter((m) => !m.present).length * 4;
+    // Fail conditions (moves after which the exit is unreachable) are penalised
+    // per distinct move, so the search can work them away one at a time.
+    if (!targets.allowFailConditions) {
+      const f = findFailures(analysis, { maxStates });
+      metrics.failMoves = new Set(f.failMoves.map((m) => describeAction(level, analysis, m.action))).size;
+      metrics.deadEnds = f.deadStates.length;
+      if (!f.complete) score += 20;
+      score += metrics.failMoves * 6;
+    }
   }
   return { level, analysis, result, metrics, motifs: motifs_, score };
 }
@@ -335,6 +346,11 @@ export function generateLevel({ seed = 1, targets = DEFAULT_TARGETS, width = 12,
   // Step 8: verify via gameplay replay and record everything.
   const replay = best.metrics.solved ? replaySolution(best.level, best.analysis, best.result, { record: false }) : null;
   const metrics = computeMetrics(best.level, best.analysis, best.result, replay);
+  if (metrics.solved) {
+    const f = findFailures(best.analysis);
+    metrics.failMoves = new Set(f.failMoves.map((m) => describeAction(best.level, best.analysis, m.action))).size;
+    metrics.deadEnds = f.deadStates.length;
+  }
   const solved = metrics.solved;
   return {
     seed,

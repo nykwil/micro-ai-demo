@@ -12,7 +12,7 @@ generateBatch({ seed: Number(seed), count: Number(count), iterations: Number(ite
   console.log(Level.fromJSON(r.level).toAscii().join('\n'));
   console.log('motifs:', r.motifs.map((x) => `${x.motif}${x.present ? '' : '(missing)'}`).join(', '));
   if (m.solved) {
-    console.log(`actions ${m.minActions}  parallel ${m.parallelSteps}  switches ${m.physicsSwitches}  relocations ${m.portalRelocations}  coop ${m.coopDeps}  alternation ${m.alternationDepth}  difficulty ${m.executionDifficulty}  diversity ${m.solutionDiversity}`);
+    console.log(`actions ${m.minActions}  parallel ${m.parallelSteps}  switches ${m.physicsSwitches}  relocations ${m.portalRelocations}  coop ${m.coopDeps}  alternation ${m.alternationDepth}  difficulty ${m.executionDifficulty}  diversity ${m.solutionDiversity}  fail moves ${m.failMoves}`);
     r.solution.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
   } else console.log('status:', m.status);
   console.log('replay:', JSON.stringify(r.replay), ' shortcut:', r.shortcut, ' restarts:', r.restarts);
