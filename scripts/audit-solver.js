@@ -14,7 +14,7 @@ const NLEV = +process.argv[2] || 8, MAXS = +process.argv[3] || 400;
 const levels = SAMPLES.map(s => Level.fromAscii(s.rows));
 for (let s = 0; levels.length < NLEV; s++) { const rng = new Rng(3100 + s); const g = expandGrammar({ physicsSwitches: 2, coopDeps: 1, alternationDepth: 3, portalRelocations: 1 }, rng);
   let L = buildSkeleton(g.motifs, rng); for (let j = 0; j < 25; j++) { const m = mutate(L, rng); if (m) L = m.level; } levels.push(L); }
-let ok = 0, bad = 0; const errs = {};
+let ok = 0, bad = 0; const errs = {}; const kinds = {};
 const rng = new Rng(5);
 for (const [li, L] of levels.entries()) {
   const an = analyzeLevel(L);
@@ -23,9 +23,10 @@ for (const [li, L] of levels.entries()) {
   for (const st of states) {
     for (const { state, action } of ex.model.successors(st)) {
       const r = executeAction(L, an, st, action, state);
+      kinds[action.type + '/' + (action.via?.kind ?? '-')] = (kinds[action.type + '/' + (action.via?.kind ?? '-')] || 0) + 1;
       if (r.ok) ok++; else { bad++; const k = r.error.replace(/\d+/g, '#'); errs[k] = (errs[k] || 0) + 1; if (bad <= 5) console.log('FAIL level', li, JSON.stringify(st), JSON.stringify({ ...action, chain: action.chain }), '->', JSON.stringify(state), r.error); }
     }
   }
   console.log('level', li, 'states', ex.states.length, 'ok', ok, 'bad', bad);
 }
-console.log({ ok, bad }, errs);
+console.log({ ok, bad }, errs, kinds);

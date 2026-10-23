@@ -5,7 +5,7 @@ A design tool and playable prototype for a cooperative two-character portal puzz
 - **Zelda mode**: top-down, four-directional, walls block walking.
 - **Mario mode**: side-on platforming, gravity pulls to the bottom of the screen, and the top edges of solid tiles are platforms.
 
-Each character owns one portal endpoint. Any trip between a wall portal and a floor portal switches physics mode: Zelda becomes Mario, Mario becomes Zelda. A Zelda character entering a wall portal drops out of the floor portal in Mario mode. Wall → wall keeps the current mode. Floor → floor is excluded. Both characters must reach the exit.
+Each character owns one portal endpoint. Any trip between a wall portal and a floor portal switches physics mode: Zelda becomes Mario, Mario becomes Zelda. A Zelda character entering a wall portal drops out of the floor portal in Mario mode. Seen from the side, a floor portal is a **door** in the backdrop: a Mario character goes through it with Up and comes out of the wall portal in Zelda mode. Wall → wall keeps the current mode. Floor → floor is excluded. Both characters must reach the exit.
 
 The tool generates levels from a puzzle grammar, works out real reachability in both movement modes, solves for both characters, and replays the solution through the gameplay physics to verify it.
 
@@ -27,20 +27,23 @@ npm run build        # static build in dist/
 | --- | --- |
 | **Edit** | Paint floor / solid / pit, exits, starts and sockets (shootable surfaces, drawn light blue). Each level can turn on tutorial hints that show where a tap would place a portal. Every edit re-runs analysis and the solver and prints a geometry-change report (regions, platforms, jump connections, shortest solution, shortcut warning). Overlays show Zelda regions, Mario platforms, jump connections and portal launches; each connection is drawn as one concrete way to perform it (click one in the list to highlight it and its takeoff spot). Supports undo, JSON export/import and ASCII copy. |
 | **Solve** | Shortest solution for both characters, complexity metrics, step-through of solver states, **Replay with physics** (runs the solution through the real game loop with scripted controllers), **Find shortcut fix**, and **Fail conditions**: every move that soft-locks the level (no way left to get both characters to the exit), with a view of the stuck situation. |
-| **Play** | Real-time game. A: WASD (W/Space jumps), E shoots. B: arrows (Up jumps), Enter or `/` shoots. One gamepad: left stick = A, right stick = B. Two gamepads: one each. Shots fire on release: tap to shoot the way you face, hold + direction + release to aim, long hold with no direction to shoot the floor under you. **Watch solution** plays the shortest solution in the real game. |
+| **Play** | Real-time game. A: WASD (W/Space jumps), E shoots. B: arrows (Up/Right Shift jumps), Enter or `/` shoots. One gamepad: left stick = A, right stick = B. Two gamepads: one each. Shots fire on release: tap to shoot the way you face, hold + direction + release to aim, long hold with no direction to shoot the floor under you (in platformer mode, the door behind you, which also takes you through it). In platformer mode, Up in front of an active door goes through it. **Watch solution** plays the shortest solution in the real game. |
 | **Generate** | Set complexity targets, generate candidates in a Web Worker, filter/sort them, and load one to inspect its intended grammar tree next to the actual solution. By rule, generated levels have **no fail conditions**: there's no move after which the exit becomes unreachable. A checkbox allows them. |
 
 ## Portal transitions
 
-Going through a portal is one of five trips. Floor → floor is inactive, and XY characters can't enter floor portals, since a floor tile is an XZ surface. Each trip has one rule for where you come out and how you start moving. The analysis and the solver follow the same rule, so every outcome of a trip is explored exactly.
+Going through a portal is one of six trips. Floor → floor is inactive. Each trip has one rule for where you come out and how you start moving. The analysis and the solver follow the same rule, so every outcome of a trip is explored exactly.
 
 | # | Trip | Mode | How it resolves today | Status |
 | --- | --- | --- | --- | --- |
 | 1 | wall → wall | XZ → XZ | Appear centred on the tile in front of the exit, standing still, facing out. If that tile is a pit, the trip is refused and the portal acts as a wall. | settled |
 | 2 | wall → wall | XY → XY | Appear touching the exit face, feet level with the bottom of its tile, moving out at a fixed ~8.9 tiles/s (entry speed is not carried through), then fall with air control. | open: carry your actual speed through? |
 | 3 | floor → wall | XZ → XY | Same as 2: launched out of the wall at ~8.9 tiles/s. | open: drop out with no speed instead? |
-| 4 | wall → floor | XY → XZ | Appear centred on the floor portal's tile (standing on the hole), still. The portal only fires when you step *onto* it, so you don't fall straight back in; you must walk off. | open: step off automatically onto a neighbouring tile? |
-| 5 | wall → floor | XZ → XY | Appear in the floor portal's tile at rest, which in side view is open air, and fall straight down. | settled |
+| 4 | wall → floor | XY → XZ | Appear centred on the floor portal's tile (standing on the hole), still. Step off when you like. | settled |
+| 5 | wall → floor | XZ → XY | Appear in the floor portal's tile at rest, which in side view is open air (or standing in front of the door, if there's ground under it), and fall straight down. | settled |
+| 6 | door → wall | XY → XZ | Stand in front of the door and press Up, or shoot the door behind you (long hold) with the other portal placed. Appear on the tile in front of the wall, still, facing out; refused if that tile isn't floor. | settled |
+
+**Landing spot.** After any trip, the tile you came out in is your landing spot. Until you leave it, its portals do nothing for you: the wall faces around it and the floor portal or door in it. So you never bounce straight back. Two portals facing each other across a one-tile gap no longer fling an XY character back and forth forever.
 
 Planned for all of them: a short (~0.4 s) take-over with a portal animation, during which the player has no control.
 
@@ -93,7 +96,9 @@ Analysis takes about 100 ms for a 12×12 level. After an edit, only platforms wh
 
 - **Added a `PIT` tile.** With only floor and solid tiles, Mario reachability is provably a subset of Zelda reachability: both are confined to the same open region, and Mario adds gravity. That would make "Platform Access" impossible. A pit blocks Zelda walking but is open air in Mario mode.
 - **Wall sockets are on left/right faces only.** A socket on a top face would also be a floor that Mario characters stand on, which makes portal placement change the platform graph. This can be added later if needed.
-- **Portals are shot** in straight cardinal lines, onto marked sockets only. A shot flies over pits and stops at the first solid tile. A Zelda character can shoot from anywhere along a socket's line of fire, and a Mario character only while standing. Floor sockets are shot by aiming at the floor under you, in top-down mode only. The solver works out every spot you can shoot each socket from.
+- **Portals are shot** in straight cardinal lines, onto marked sockets only. A shot flies over pits and stops at the first solid tile. A Zelda character can shoot from anywhere along a socket's line of fire, and a Mario character only while standing. Floor sockets are shot by aiming at the tile you're in: the floor under you in top-down mode, the door behind you in platformer mode (which also takes you through it if the other portal is placed). The solver works out every spot you can shoot each socket from.
+- **Doors need their own Up.** In front of an active door, Up goes through it instead of jumping. Space, Right Shift and LT/RT still jump, so no jump the analysis finds is lost.
+- **The solver tracks landing spots** only where they matter. A character fresh out of a portal that can step off its landing spot and back without touching anything is treated as having done so, since that state can do everything the fresh one can. The bit is kept only when the spot is closed in: an XZ tile with no floor next to it, or an XY one-tile pocket with walls on both sides and a ceiling. For launches, faces around the landing spot are dropped from the touched lists. A launch only meets them while still on the spot: it starts there, never rises, and can't turn back into the spot's column before falling out of its row.
 - **Portal launch speed is a constant** (about 9 tiles/s along the face normal). Entry momentum is not preserved yet.
 - **Mid-jump portal entry is modelled.** A jump that passes an active portal goes through it, so the solver treats it as `EnterPortal`, not `JumpTo`.
 - **Physics units were chosen for exact analysis.** Horizontal speeds come in steps of 1/128 tile per frame (about 0.47 tiles/s), so an analog stick has 11 run speeds each way. Running is about 5.2 tiles/s, ground acceleration about 56 tiles/s² and air control about 28 tiles/s². Vertical motion uses 1/1024 tile.
@@ -106,7 +111,7 @@ Analysis takes about 100 ms for a 12×12 level. After an edit, only platforms wh
 
 The claims are that the analysis finds everything (complete), everything it finds really works (sound), and the solver agrees with the game. Each is checked against the real physics in `game.js` and `physics.js`.
 
-`npm test` (about 30 s) runs the 16 tests from §14 plus:
+`npm test` (about 45 s) runs the 16 tests from §14 plus:
 
 - the physics arithmetic stays exact, and moves are identical when shifted by whole tiles;
 - every reachable outcome's witness reproduces it in the real physics (including a level with a socket on every wall face);
@@ -114,7 +119,9 @@ The claims are that the analysis finds everything (complete), everything it find
 - every transition of the solver's state graph is executed in the real game from that state and ends where the solver says;
 - shortest solutions agree with an independent breadth-first search;
 - random two-player play, started from random reachable states, never reaches a situation outside the solver's model;
-- a standing character can stop at any position on its platform (the "start anywhere" assumption).
+- a standing character can stop at any position on its platform (the "start anywhere" assumption);
+- doors, door shots and landing spots behave as described, in the game and in the solver, and every transition of a level built around a door works in the game;
+- the sample levels have no fail conditions.
 
 For deeper searches, the audit scripts run the same checks at larger scale:
 
@@ -133,6 +140,7 @@ Results during development:
 | Random analog moves | 2.2 M plus 445 k. Nothing missed. |
 | Solver transitions executed in the game | 12,098. All ended in the predicted state. |
 | Random-play checks | 913 k. All covered by the model. |
+| After adding doors and landing spots | 55,679 solver transitions executed in the game (235 door entries, 209 door shots). All ended in the predicted state. 867 k random-play checks (Up presses included), all covered. |
 
 An adversarial agent then spent about 2.5 hours trying to break these claims. Its independent exhaustive search covered every full body state (about 6.4 billion states over 960 levels, up to 16×16), and it found no mismatch with the reachability analysis in either direction. It also replayed 334k witnesses, ran 480k solver transitions in the game, ran 9k incremental-cache checks, and ran 16M random-play checks. It found two solver bugs (below) and the momentum gap described above.
 

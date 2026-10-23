@@ -367,6 +367,23 @@ export function drawBody(ctx, b, i, ts) {
     ctx.fillStyle = '#111';
     ctx.fillText('AB'[i], x + w / 2 - ts * 0.07, y + h / 2 + ts * 0.08);
   }
+  // Standing in front of an active door: an "up" prompt above the head.
+  if (b.mode === MARIO && b.door >= 0) {
+    const cx = x + w / 2;
+    const top = y - ts * 0.12;
+    const s = ts * 0.16;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.beginPath();
+    ctx.arc(cx, top - s, s * 1.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.portal[i];
+    ctx.beginPath();
+    ctx.moveTo(cx, top - s * 1.8);
+    ctx.lineTo(cx + s * 0.7, top - s * 0.6);
+    ctx.lineTo(cx - s * 0.7, top - s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
   // Facing direction: a triangle just outside the body.
   if (b.facing) {
     const { x: fx, y: fy } = b.facing;

@@ -1,7 +1,9 @@
 // Keyboard and gamepad input for the two characters.
 //
-// Keyboard:  A = WASD (W jumps in Mario mode), E shoots
-//            B = arrow keys (Up jumps in Mario mode), Enter or / shoots
+// Keyboard:  A = WASD (W jumps in Mario mode), Space jumps, E shoots
+//            B = arrow keys (Up jumps in Mario mode), Right Shift jumps, Enter or / shoots
+// Up also goes through a door in Mario mode, so the separate jump keys let
+// you jump while standing in front of one.
 // Gamepad:   one pad  -> left stick = A, right stick = B, LB/RB shoot, LT/RT jump
 //            two pads -> each pad's left stick, A button jumps, X shoots
 // The shoot button is reported as held; shots fire on release (see main.js).
@@ -39,7 +41,7 @@ export function readInputs() {
   const k = (c) => keys.has(c);
   const kb = [
     axisInput((k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0), (k('KeyS') ? 1 : 0) - (k('KeyW') ? 1 : 0), k('Space')),
-    axisInput((k('ArrowRight') ? 1 : 0) - (k('ArrowLeft') ? 1 : 0), (k('ArrowDown') ? 1 : 0) - (k('ArrowUp') ? 1 : 0), false),
+    axisInput((k('ArrowRight') ? 1 : 0) - (k('ArrowLeft') ? 1 : 0), (k('ArrowDown') ? 1 : 0) - (k('ArrowUp') ? 1 : 0), k('ShiftRight')),
   ];
   // A key pressed and released between two reads still counts as held once,
   // so a very quick tap is never lost.

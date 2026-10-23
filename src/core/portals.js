@@ -1,15 +1,21 @@
 // Portal rules shared by gameplay, analysis and the solver.
 //
 //   Wall  -> Wall   preserve movement mode
-//   Floor -> Wall   switch mode (only Zelda characters can enter a floor portal,
-//                   so this always gives Mario mode, launched out of the wall)
+//   Floor -> Wall   switch mode. A Zelda character steps onto the floor portal
+//                   and is launched out of the wall in Mario mode; a Mario
+//                   character goes through it as a door (Up, or shooting it)
+//                   and stands in front of the wall in Zelda mode.
 //   Wall  -> Floor  switch mode: Mario comes out in Zelda mode; Zelda comes out
 //                   in Mario mode, dropping out of the floor portal's cell
 //   Floor -> Floor  excluded: such a pair is inactive
 //
-// A Zelda-mode character can only come out of a wall portal onto a FLOOR
+// A character coming out in Zelda mode in front of a wall portal needs a FLOOR
 // access cell; otherwise that traversal is unavailable and the portal acts as
 // a plain wall.
+//
+// Landing spot: the tile a character comes out in. Until it leaves that tile,
+// portals on it do nothing for that character: the wall faces bounding it and
+// the floor portal (door) in it. This stops characters bouncing straight back.
 
 import { FLOOR, SOLID, WALL } from './level.js';
 import { PHYS, SUBX, ZELDA, MARIO, bodyAtCell } from './physics.js';
@@ -40,13 +46,23 @@ export function transitionMode(level, entrySid, exitSid, entryMode) {
   const aWall = a.type === WALL;
   const bWall = b.type === WALL;
   if (!aWall && !bWall) return null;
-  if (!aWall && entryMode !== ZELDA) return null;
-  if (aWall !== bWall) return entryMode === ZELDA ? MARIO : ZELDA;
-  if (entryMode === ZELDA) {
+  const mode = aWall !== bWall ? (entryMode === ZELDA ? MARIO : ZELDA) : entryMode;
+  if (mode === ZELDA && bWall) {
     const c = level.accessCell(b);
     if (level.get(c.x, c.y) !== FLOOR) return null;
   }
-  return entryMode;
+  return mode;
+}
+
+// Landing-spot tile (cell index) for a character coming out of socket sid.
+export function spotCell(level, sid) {
+  const c = level.accessCell(level.sockets[sid]);
+  return level.idx(c.x, c.y);
+}
+
+// Tile in front of a wall face [x, y, n] (the tile a body touching it is in).
+export function faceFront(level, x, y, n) {
+  return level.idx(x + n, y);
 }
 
 export function exitBody(level, exitSid, mode) {
@@ -74,7 +90,8 @@ export function exitBody(level, exitSid, mode) {
 // Shooting. A shot travels in a straight cardinal line from the shooter's cell
 // through open tiles (floor and pit) and stops at the first solid tile. It
 // places the shooter's portal if the face it hits holds a wall socket. A shot
-// "at the floor" targets a floor socket in the shooter's own cell.
+// "at the floor" targets a floor socket in the shooter's own cell: the floor
+// under you in Zelda mode, the backdrop behind you (a door) in Mario mode.
 // ---------------------------------------------------------------------------
 
 export const SHOOT_FLOOR = 'floor';

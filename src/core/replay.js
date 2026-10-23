@@ -3,7 +3,7 @@
 // solver predicted. This is the ground-truth check that discrete reachability
 // agrees with gameplay physics.
 
-import { WALL } from './level.js';
+import { WALL, FLOOR, SOLID } from './level.js';
 import { PHYS, SUBX, SUBY, ZELDA, MARIO, centerCell, marioVelocity, bodyAtCell } from './physics.js';
 import { Game } from './game.js';
 import { restRange, restingBody } from './reach.js';
@@ -37,7 +37,8 @@ export function replaySolution(level, analysis, result, { record = true } = {}) 
 }
 
 // Put the game into a solver state: Zelda characters centred in their cell,
-// Mario characters standing at rest in the middle of their platform.
+// Mario characters standing at rest in the middle of their platform. A fresh
+// character is still on its landing spot (its current tile).
 export function gameAtState(level, analysis, state) {
   const game = new Game(level);
   game.portals = [state[4], state[5]];
@@ -49,6 +50,10 @@ export function gameAtState(level, analysis, state) {
       const p = analysis.mario.platforms[loc];
       const [lo, hi] = restRange(level, p);
       game.chars[c].body = restingBody(Math.floor((lo + hi) / 2) / SUBX, p.y);
+    }
+    if ((state[6] >> c) & 1) {
+      const cc = centerCell(game.chars[c].body);
+      game.chars[c].spot = level.idx(cc.x, cc.y);
     }
   }
   return game;
@@ -156,6 +161,44 @@ function makeRunner(level, analysis, game, record) {
     if (Math.round(b.x * SUBX) !== Math.round(targetX * SUBX) || b.vx !== 0) throw new ReplayError('Walk did not stop on target');
   };
 
+  // A character still on its landing spot steps off it first (the solver only
+  // keeps a state fresh when that is impossible, and then never needs it).
+  const leaveSpot = (c) => {
+    const ch = game.chars[c];
+    if (ch.spot < 0) return;
+    const b = body(c);
+    const W = level.width;
+    if (b.mode === ZELDA) {
+      const cell = ch.spot;
+      const blocked = blockedCell(level, game.portals[0], game.portals[1]);
+      const x = cell % W;
+      const n = [x > 0 ? cell - 1 : -1, x < W - 1 ? cell + 1 : -1, cell - W, cell + W]
+        .find((m) => m >= 0 && m < level.tiles.length && level.tiles[m] === FLOOR && m !== blocked);
+      if (n === undefined) return;
+      if (zeldaStepTo(c, n)) throw new ReplayError('Unexpected teleport while stepping off the landing spot');
+      return;
+    }
+    const p = mario.platforms[marioPlatform(c)];
+    if (!p) return;
+    const [lo, hi] = restRange(level, p);
+    const sx = ch.spot % W;
+    const half = PHYS.w * SUBX / 2;
+    // Rest positions whose centre is outside the spot's column.
+    const out = lo + half < sx * SUBX ? lo : hi + half >= (sx + 1) * SUBX ? hi : null;
+    if (out !== null) {
+      marioGoTo(c, out / SUBX);
+      return;
+    }
+    // Closed in on both sides: hop straight up out of the tile, if there's room.
+    if (level.get(sx, Math.floor(ch.spot / W) - 1) === SOLID) return;
+    tick(c, { mx: 0, my: 0, jump: true });
+    for (let i = 0; i < 200 && !(body(c).grounded && body(c).vx === 0); i++) {
+      tick(c, IDLE);
+      noTeleport(c, 'hopping off the landing spot');
+    }
+    if (ch.spot >= 0) throw new ReplayError('Could not leave the landing spot');
+  };
+
   // Play a witness's inputs, then release the stick until the character
   // stops or goes through a portal. Resolves to { teleport } or { settled }.
   const runWitness = (c, w) => {
@@ -189,25 +232,37 @@ function makeRunner(level, analysis, game, record) {
     }
   };
 
+  // Walk a Mario character to the door spot for floor socket sid.
+  const marioToDoor = (c, sid) => {
+    const X = mario.doorAt[marioPlatform(c)].get(sid);
+    if (X === undefined) throw new ReplayError(`Door ${sid} is not on this platform`);
+    marioGoTo(c, X / SUBX);
+  };
+
   const doAction = (a) => {
     const c = a.c;
     const s = level.sockets[a.socket ?? 0];
     const access = a.socket !== undefined ? level.accessCell(s) : null;
     const accessX = access ? access.x + (1 - PHYS.w) / 2 : 0;
+    if (game.chars[c].spot >= 0 && !(a.type === 'place' && body(c).mode === ZELDA && a.from === game.chars[c].spot)) leaveSpot(c);
     if (a.type === 'place') {
       // Walk to a spot with a clear shot and fire at the socket.
       let dir;
       if (body(c).mode === ZELDA) {
         zeldaGoTo(c, a.from);
         dir = s.type === WALL ? { x: -s.n, y: 0 } : SHOOT_FLOOR;
-      } else {
+      } else if (s.type === WALL) {
         const X = mario.shootAt[marioPlatform(c)].get(a.socket);
         if (X === undefined) throw new ReplayError(`Socket ${a.socket} cannot be shot from this platform`);
         marioGoTo(c, X / SUBX);
         dir = { x: -s.n, y: 0 };
+      } else {
+        marioToDoor(c, a.socket);
+        dir = SHOOT_FLOOR;
       }
       const r = game.shoot(c, dir);
       if (r.sid !== a.socket) throw new ReplayError(`Shot at socket ${a.socket} failed: ${r.reason || `hit socket ${r.sid}`}`);
+      noTeleport(c, 'placing a portal');
       return;
     }
     if (a.type === 'jump') {
@@ -231,6 +286,15 @@ function makeRunner(level, analysis, game, record) {
     } else if (a.via.kind === 'walk') {
       marioGoTo(c, accessX);
       t = push(c, -s.n, 0);
+    } else if (a.via.kind === 'door') {
+      marioToDoor(c, a.socket);
+      tick(c, { mx: 0, my: -1, jump: true });
+      t = newTeleport(c);
+    } else if (a.via.kind === 'shot') {
+      marioToDoor(c, a.socket);
+      const r = game.shoot(c, SHOOT_FLOOR);
+      if (r.sid !== a.socket) throw new ReplayError(`Shot at door ${a.socket} failed: ${r.reason || `hit socket ${r.sid}`}`);
+      t = newTeleport(c);
     } else {
       const w = mario.witness(mario.edges[a.via.edge]);
       marioGoTo(c, w.startX);
@@ -250,6 +314,10 @@ function makeRunner(level, analysis, game, record) {
       }
     }
     if (game.portals[0] !== expected[4] || game.portals[1] !== expected[5]) throw new ReplayError(`After action ${i + 1}, portals differ from the solver state`);
+    // A state the solver keeps fresh must really be on its landing spot in the game.
+    for (const c of [0, 1]) {
+      if ((expected[6] >> c) & 1 && game.chars[c].spot < 0) throw new ReplayError(`After action ${i + 1}, character ${'AB'[c]} has left its landing spot; solver expected it stuck there`);
+    }
   };
 
   // Walk both characters onto the exit and check the game registers the win.

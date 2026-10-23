@@ -89,10 +89,10 @@
           <pre id="playInfo"></pre>
           <h2>Controls</h2>
           <table class="controls">
-            <tr><th></th><th>Move</th><th>Jump (Mario)</th><th>Shoot portal</th></tr>
-            <tr><td class="a">A</td><td>WASD</td><td>W / Space</td><td>E</td></tr>
-            <tr><td class="b">B</td><td>Arrows</td><td>Up</td><td>Enter or /</td></tr>
-            <tr><td>Pad</td><td>Left stick = A, right stick = B</td><td>Stick up, LT / RT</td><td>LB / RB</td></tr>
+            <tr><th></th><th>Move</th><th>Jump (Mario)</th><th>Door (Mario)</th><th>Shoot portal</th></tr>
+            <tr><td class="a">A</td><td>WASD</td><td>W / Space</td><td>W</td><td>E</td></tr>
+            <tr><td class="b">B</td><td>Arrows</td><td>Up / Right Shift</td><td>Up</td><td>Enter or /</td></tr>
+            <tr><td>Pad</td><td>Left stick = A, right stick = B</td><td>Stick up, LT / RT</td><td>Stick up</td><td>LB / RB</td></tr>
           </table>
           <h2>Shooting portals</h2>
           <ul class="hint">
@@ -101,12 +101,13 @@
               <ul>
                 <li><b>Tap</b>: shoot the way you're facing (the little arrow).</li>
                 <li><b>Hold, press a direction, release</b>: aim. You stand still while holding.</li>
-                <li><b>Hold for a moment with no direction, then release</b>: shoot the floor under you (floor sockets).</li>
+                <li><b>Hold for a moment with no direction, then release</b>: shoot the floor under you (floor sockets). In platformer mode the same shot hits the back wall behind you: a floor socket seen from the side is a <b>door</b>, and if the other portal is placed you go straight through it.</li>
               </ul>
             </li>
             <li>Shots go in straight lines (up, down, left or right), fly over pits, and stop at the first wall. A dashed line shows where you're aiming; a ring at the end means it will place a portal, a cross means it won't.</li>
-            <li>In platformer mode you can only shoot while standing, and floor sockets only work in top-down mode.</li>
-            <li>With both portals placed, walk into one (into the wall, or onto the floor oval) to come out of the other. Floor → wall switches you to platformer mode, wall → floor back to top-down, wall → wall keeps your mode.</li>
+            <li>In platformer mode you can only shoot while standing.</li>
+            <li>With both portals placed, walk into one (into the wall, or onto the floor oval) to come out of the other. In platformer mode, stand in front of a door and press <b>Up</b> (an arrow shows over your head); Space / Right Shift / LT / RT still jump there. Floor ↔ wall switches mode (top-down ↔ platformer), wall → wall keeps it.</li>
+            <li><b>Landing spot:</b> after coming out of a portal, the portals on the tile you came out in do nothing for you until you step off it, so you never bounce straight back.</li>
             <li>Get both characters onto the green flag.</li>
           </ul>
           <p class="hint"><b>Watch solution</b> plays the shortest solution in the real game: the same physics and controls as above, driven by scripted inputs.</p>

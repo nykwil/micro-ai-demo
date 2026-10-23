@@ -371,7 +371,7 @@ test('shooting: straight cardinal lines to marked sockets only', () => {
   assert.match(g2.aimShot(0, LEFT).reason, /Land first/);
   g2.chars[0].body = bodyAtCell(4, 2, MARIO);
   assert.equal(g2.shoot(0, LEFT).sid, -1, 'standing a row lower: the socket is not in line');
-  assert.equal(g2.shoot(0, SHOOT_FLOOR).sid, -1, 'no floor shots in platformer mode');
+  assert.equal(g2.shoot(0, SHOOT_FLOOR).sid, -1, 'no door socket behind you');
 });
 
 test('any wall → floor trip switches mode: top-down in, platformer out (dropping out of the floor portal)', () => {

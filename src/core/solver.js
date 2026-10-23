@@ -1,32 +1,37 @@
 // Discrete two-character puzzle solver (breadth-first: every action costs 1).
 //
-// State: [modeA, locA, modeB, locB, portalA, portalB]
+// State: [modeA, locA, modeB, locB, portalA, portalB, fresh]
 //   loc is a cell index in Zelda mode and a platform id in Mario mode.
 //   portal is a socket id or -1 (not yet placed).
+//   fresh has bit c set while character c is still on its landing spot (see
+//   portals.js) and cannot step off it freely. Whenever it can walk off and
+//   back without touching anything, the bit is cleared: that state can do
+//   everything the fresh one can.
 //
 // Actions (any character may act at each step):
 //   place  PlacePortal(s)  walk somewhere with a straight shot at the socket and shoot
-//   enter  EnterPortal(s)  walk/jump into an active portal, come out of its partner
+//   enter  EnterPortal(s)  walk/jump into an active portal (or go through a door with
+//                          Up, or shoot the door behind you), come out of its partner
 //   jump   JumpTo(p)       any Mario move (exact reachability) that comes to rest on platform p
 //
 // Zelda walking inside a region is folded into the action it leads to, so it is
 // never a separate step. Coming out of a wall portal in Mario mode launches the
 // character; every distinct landing (chosen by air control) is a successor.
 
-import { WALL, FLOOR } from './level.js';
+import { WALL, FLOOR, SOLID } from './level.js';
 import { ZELDA, MARIO } from './physics.js';
-import { pairActive, partner, blockedCell, transitionMode, shotLine } from './portals.js';
+import { pairActive, partner, blockedCell, transitionMode, shotLine, spotCell } from './portals.js';
 import { reachableLabels } from './zelda.js';
 
 const MAX_CHAIN = 4;
 
 // Unique numeric key for a state. Radixes come from the level so no field can
 // overflow into the next (locations are cells or platforms, both fewer than
-// the cell count; portals are -1 or a socket id).
+// the cell count; portals are -1 or a socket id; fresh is two bits).
 function packer(level) {
   const L = level.tiles.length;
   const P = level.sockets.length + 1;
-  return (s) => ((((s[0] * L + s[1]) * 2 + s[2]) * L + s[3]) * P + (s[4] + 1)) * P + (s[5] + 1);
+  return (s) => (((((s[0] * L + s[1]) * 2 + s[2]) * L + s[3]) * P + (s[4] + 1)) * P + (s[5] + 1)) * 4 + s[6];
 }
 
 export class PuzzleModel {
@@ -44,11 +49,39 @@ export class PuzzleModel {
     // the open line in front of a wall socket, or a floor socket's own cell.
     this.shooters = L.sockets.map((s) =>
       s.type === WALL ? shotLine(L, s).map((c) => L.idx(c.x, c.y)).filter((i) => L.tiles[i] === FLOOR) : [L.idx(s.x, s.y)]);
+    // Landing spot of each exit, and the Mario platforms a fresh character can
+    // never step off: a one-tile pocket closed on both sides and above (any
+    // other platform can be walked off, or hopped out of straight up).
+    this.spot = L.sockets.map((s, sid) => spotCell(L, sid));
+    const solid = (x, y) => L.get(x, y) === SOLID;
+    this.pocket = analysis.mario.platforms.map((p) =>
+      p.x0 === p.x1 && solid(p.x0 - 1, p.y) && solid(p.x0 + 1, p.y) && solid(p.x0, p.y - 1) ? L.idx(p.x0, p.y) : -1);
   }
 
   initialState() {
     const L = this.level;
-    return [ZELDA, L.idx(L.startA.x, L.startA.y), ZELDA, L.idx(L.startB.x, L.startB.y), -1, -1];
+    return [ZELDA, L.idx(L.startA.x, L.startA.y), ZELDA, L.idx(L.startB.x, L.startB.y), -1, -1, 0];
+  }
+
+  // Clear fresh bits of characters that can step off their landing spot freely.
+  canonical(s) {
+    if (!s[6]) return s;
+    const L = this.level;
+    const W = L.width;
+    for (const c of [0, 1]) {
+      if (!(s[6] & (1 << c))) continue;
+      const loc = s[c * 2 + 1];
+      let stuck;
+      if (s[c * 2] === MARIO) stuck = this.pocket[loc] >= 0;
+      else {
+        const blocked = blockedCell(L, s[4], s[5]);
+        const x = loc % W;
+        const nb = [x > 0 ? loc - 1 : -1, x < W - 1 ? loc + 1 : -1, loc - W, loc + W];
+        stuck = !nb.some((n) => n >= 0 && n < L.tiles.length && L.tiles[n] === FLOOR && n !== blocked);
+      }
+      if (!stuck) s[6] &= ~(1 << c);
+    }
+    return s;
   }
 
   regions(p0, p1) {
@@ -67,30 +100,30 @@ export class PuzzleModel {
     return this.atExit(s[0], s[1], r) && this.atExit(s[2], s[3], r);
   }
 
-  // Resolve coming out of `exitSid` in `mode`. Returns [{ mode, loc, chain }],
-  // where chain lists the launch outcome chosen at each Mario exit.
+  // Resolve coming out of `exitSid` in `mode`. Returns [{ mode, loc, chain, fresh }],
+  // where chain lists the launch outcome chosen at each Mario exit and fresh
+  // says the character is still on its landing spot.
   exitOutcomes(exitSid, mode, p0, p1, depth = 0) {
-    const L = this.level;
-    if (mode === ZELDA) {
-      const s = L.sockets[exitSid];
-      const cell = s.type === WALL ? this.access[exitSid] : L.idx(s.x, s.y);
-      return [{ mode: ZELDA, loc: cell, chain: [] }];
-    }
+    if (mode === ZELDA) return [{ mode: ZELDA, loc: this.spot[exitSid], chain: [], fresh: 1 }];
     if (depth >= MAX_CHAIN) return [];
     const out = [];
+    const spot = this.spot[exitSid];
     const launches = this.analysis.mario.launches[exitSid];
     launches.forEach((o, li) => {
-      const hit = o.touched.find((sid) => sid === p0 || sid === p1);
+      // Faces bounding the landing spot are disarmed. A launch only meets them
+      // while still on the spot: it starts there, never rises, and cannot turn
+      // back into the spot's column before dropping out of its row.
+      const hit = o.touched.find((sid) => (sid === p0 || sid === p1) && this.spot[sid] !== spot);
       if (hit === undefined) {
         // A launch that only reaches a portal face does nothing without a portal there.
-        if (o.to >= 0) out.push({ mode: MARIO, loc: o.to, chain: [{ launch: li, sid: exitSid }] });
+        if (o.to >= 0) out.push({ mode: MARIO, loc: o.to, chain: [{ launch: li, sid: exitSid }], fresh: this.pocket[o.to] === spot ? 1 : 0 });
         return;
       }
       const next = partner(p0, p1, hit);
-      const m = transitionMode(L, hit, next, MARIO);
+      const m = transitionMode(this.level, hit, next, MARIO);
       if (m === null) return;
       for (const r of this.exitOutcomes(next, m, p0, p1, depth + 1)) {
-        out.push({ mode: r.mode, loc: r.loc, chain: [{ launch: li, sid: exitSid, via: hit }, ...r.chain] });
+        out.push({ mode: r.mode, loc: r.loc, chain: [{ launch: li, sid: exitSid, via: hit }, ...r.chain], fresh: r.fresh });
       }
     });
     return out;
@@ -111,30 +144,39 @@ export class PuzzleModel {
     const other = s[5 - c];
     const p0 = s[4];
     const p1 = s[5];
+    const fresh = (s[6] >> c) & 1;
     const active = pairActive(L, p0, p1);
     const mario = this.analysis.mario;
 
-    const withChar = (m, l, np0 = p0, np1 = p1) => {
+    const withChar = (m, l, f, np0 = p0, np1 = p1) => {
       const n = s.slice();
       n[c * 2] = m;
       n[c * 2 + 1] = l;
       n[4] = np0;
       n[5] = np1;
-      return n;
+      n[6] = (n[6] & ~(1 << c)) | (f << c);
+      return this.canonical(n);
     };
+    const withPortal = (sid) => (c === 0 ? [sid, p1] : [p0, sid]);
     // Shooting a portal onto socket sid from cell `from` (Zelda) or from
     // somewhere on the current platform (Mario).
     const place = (sid, newLoc, from) => {
-      const np = c === 0 ? [sid, p1] : [p0, sid];
-      out.push({ state: withChar(mode, newLoc, np[0], np[1]), action: { c, type: 'place', socket: sid, relocation: own >= 0, from } });
+      const np = withPortal(sid);
+      const f = mode === ZELDA && from !== loc ? 0 : fresh;
+      out.push({ state: withChar(mode, newLoc, f, np[0], np[1]), action: { c, type: 'place', socket: sid, relocation: own >= 0, from } });
     };
-    const enter = (sid, via) => {
-      const exit = partner(p0, p1, sid);
+    // Going through portal sid (with portals np0/np1 in place), via `via`.
+    const enter = (sid, via, np0 = p0, np1 = p1, extra = null) => {
+      const exit = partner(np0, np1, sid);
       const m = transitionMode(L, sid, exit, mode);
-      if (m === null) return;
-      for (const r of this.exitOutcomes(exit, m, p0, p1)) {
-        out.push({ state: withChar(r.mode, r.loc), action: { c, type: 'enter', socket: sid, exit, via, chain: r.chain, fromMode: mode, exitMode: m, toMode: r.mode } });
+      if (m === null) return false;
+      for (const r of this.exitOutcomes(exit, m, np0, np1)) {
+        out.push({
+          state: withChar(r.mode, r.loc, r.fresh, np0, np1),
+          action: { c, type: 'enter', socket: sid, exit, via, chain: r.chain, fromMode: mode, exitMode: m, toMode: r.mode, ...extra },
+        });
       }
+      return true;
     };
 
     if (mode === ZELDA) {
@@ -153,9 +195,12 @@ export class PuzzleModel {
         for (const sid of [p0, p1]) {
           const sk = L.sockets[sid];
           if (sk.type === WALL) {
+            // A fresh character stands on its landing spot: walls around it are disarmed.
+            if (fresh && this.access[sid] === loc) continue;
             if (L.tiles[this.access[sid]] === 0 && reach(this.access[sid])) enter(sid, { kind: 'walk' });
           } else {
             const cell = L.idx(sk.x, sk.y);
+            if (fresh && cell === loc) continue;
             const W = L.width;
             const nb = [cell - 1, cell + 1, cell - W, cell + W].filter((n) => n >= 0 && n < L.tiles.length && Math.abs((n % W) - (cell % W)) <= 1);
             const from = nb.find((n) => L.tiles[n] === 0 && reach(n));
@@ -166,8 +211,21 @@ export class PuzzleModel {
       return;
     }
 
-    // Mario mode: loc is a platform.
+    // Mario mode: loc is a platform. A fresh Mario character is in a closed
+    // one-tile pocket where every portal it could reach is disarmed: it can
+    // only shoot.
     for (const sid of mario.placeFrom[loc]) if (sid !== own && sid !== other) place(sid, loc, null);
+    // Doors: shooting the door behind you takes you straight through it when
+    // that makes an active pair; with an active door already there, press Up.
+    for (const sid of mario.doorsOn[loc]) {
+      if (sid !== own && sid !== other) {
+        const np = withPortal(sid);
+        const shot = { placed: true, relocation: own >= 0 };
+        if (fresh || !pairActive(L, np[0], np[1]) || !enter(sid, { kind: 'shot' }, np[0], np[1], shot)) place(sid, loc, null);
+      }
+      if (active && !fresh && (sid === p0 || sid === p1)) enter(sid, { kind: 'door' });
+    }
+    if (fresh) return;
     if (active) {
       for (const sid of mario.walkIn[loc]) if (sid === p0 || sid === p1) enter(sid, { kind: 'walk' });
     }
@@ -175,7 +233,7 @@ export class PuzzleModel {
       const e = mario.edges[eid];
       const hit = active ? e.touched.find((sid) => sid === p0 || sid === p1) : undefined;
       if (hit !== undefined) enter(hit, { kind: 'jump', edge: eid });
-      else if (e.to >= 0 && e.to !== loc) out.push({ state: withChar(MARIO, e.to), action: { c, type: 'jump', edge: eid, to: e.to } });
+      else if (e.to >= 0 && e.to !== loc) out.push({ state: withChar(MARIO, e.to, 0), action: { c, type: 'jump', edge: eid, to: e.to } });
     }
   }
 }
@@ -344,7 +402,8 @@ export function describeAction(level, analysis, a) {
     const p = analysis.mario.platforms[a.to];
     return `${who}: JumpTo platform ${a.to} (row ${p.y}, x ${p.x0}-${p.x1})`;
   }
-  let t = `${who}: enter ${sk(a.socket)}${a.via && a.via.kind === 'jump' ? ' mid-jump' : ''} → out of ${sk(a.exit)}`;
+  const how = !a.via ? '' : a.via.kind === 'jump' ? ' mid-jump' : a.via.kind === 'door' ? ' (door, Up)' : a.via.kind === 'shot' ? ' (shoot the door behind and go through)' : '';
+  let t = `${who}: enter ${sk(a.socket)}${how} → out of ${sk(a.exit)}`;
   if (a.fromMode !== a.toMode) t += ` [${modeName(a.fromMode)} → ${modeName(a.toMode)}]`;
   return t;
 }

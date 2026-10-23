@@ -38,6 +38,11 @@ export function computeMetrics(level, analysis, result, replay = null) {
       jumps++;
       tolerances.push(mario.edges[a.edge].variants / COMFORT_VARIANTS);
     } else {
+      if (a.placed) {
+        // Shooting the door behind you: a placement and an entry in one.
+        placements++;
+        if (a.relocation) relocations++;
+      }
       countTransition(a.socket, a.exit);
       if (a.fromMode !== a.exitMode) physicsSwitches++;
       if (a.exitMode !== a.toMode) physicsSwitches++;

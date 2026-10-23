@@ -394,9 +394,11 @@ $('watchBtn').onclick = () => {
 };
 
 const KEY_LABEL = ['E', 'Enter'];
+const UP_LABEL = ['W', 'Up'];
 // Shooting: the button fires on release. A tap shoots the way you face; hold,
 // press a direction and release to aim (you stand still while holding); hold
-// longer than FLOOR_HOLD frames with no direction to shoot the floor under you.
+// longer than FLOOR_HOLD frames with no direction to shoot the floor under you
+// (in platformer mode: the door behind you, which also takes you through it).
 const FLOOR_HOLD = 20;
 
 function cardinal(m) {
@@ -425,8 +427,10 @@ function updateShooting(inp) {
     if (held) continue;
     a.down = false;
     const dir = aimDir(c);
+    const before = S.game.chars[c].body.mode;
     const r = S.game.shoot(c, dir);
-    S.flash = { c, text: r.sid >= 0 ? `${'AB'[c]} placed a portal.` : r.reason, until: performance.now() + 2000, ok: r.sid >= 0 };
+    const through = S.game.chars[c].body.mode !== before;
+    S.flash = { c, text: r.sid >= 0 ? `${'AB'[c]} placed a portal${through ? ' and went through the door' : ''}.` : r.reason, until: performance.now() + 2000, ok: r.sid >= 0 };
     if (r.hit) S.shots.push({ c, body: { ...S.game.chars[c].body }, dir, floor: dir === SHOOT_FLOOR, hit: r.hit, sid: r.sid, until: performance.now() + 200 });
   }
 }
@@ -452,8 +456,10 @@ function updatePlayInfo() {
   const lines = [0, 1].map((c) => {
     const aiming = S.aim[c].down;
     const target = g.aimShot(c, aiming ? aimDir(c) : g.chars[c].facing);
+    const mario = g.chars[c].body.mode === MARIO;
     const tip = aiming
-      ? `  → aiming${aimDir(c) === SHOOT_FLOOR ? ' at the floor' : ''}: release ${KEY_LABEL[c]} to shoot${target.sid >= 0 ? ' (on target)' : ''}`
+      ? `  → aiming${aimDir(c) === SHOOT_FLOOR ? (mario ? ' at the door behind you' : ' at the floor') : ''}: release ${KEY_LABEL[c]} to shoot${target.sid >= 0 ? ' (on target)' : ''}`
+      : g.doorAt(c) >= 0 ? `  → press ${UP_LABEL[c]} to go through the door`
       : S.level.hints && target.sid >= 0 && target.sid !== g.portals[c] ? `  → tap ${KEY_LABEL[c]} to shoot the socket ahead` : '';
     return `${'AB'[c]}: ${name(g.chars[c])} mode, portal ${sk(g.portals[c])}${tip}`;
   });
@@ -683,7 +689,7 @@ function frame(now) {
       if (!S.game.won) S.game.step(inp.moves);
       S.acc -= 1 / 60;
     }
-    bodies = S.game.chars.map((c) => ({ ...c.body, facing: c.facing }));
+    bodies = S.game.chars.map((c, i) => ({ ...c.body, facing: c.facing, door: S.game.doorAt(i) }));
     portals = S.game.portals;
     // Aim preview while the shoot button is held; otherwise highlight a socket
     // a tap would hit.

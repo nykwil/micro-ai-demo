@@ -201,6 +201,21 @@ export class MarioAnalyzer {
       });
     });
 
+    // Doors: a floor socket is the backdrop of its cell in Mario mode. It can be
+    // shot and entered (Up) while standing with the body's centre in that cell.
+    // doorAt[pid] maps socket id -> a rest X (SUBX units) to do that from.
+    const doorsOn = platforms.map(() => []);
+    const doorAt = platforms.map(() => new Map());
+    level.sockets.forEach((s, sid) => {
+      if (s.type === WALL || !level.socketValid(s)) return;
+      platforms.forEach((pl, pid) => {
+        const r = centerRange(level, pl, s.x, s.y);
+        if (!r) return;
+        doorsOn[pid].push(sid);
+        doorAt[pid].set(sid, Math.floor((r[0] + r[1]) / 2));
+      });
+    });
+
     // Coming out of each socket in Mario mode: launched out of a wall portal,
     // or dropping out of a floor portal (entered from a wall in Zelda mode).
     const launches = level.sockets.map((s, sid) => {
@@ -245,6 +260,8 @@ export class MarioAnalyzer {
       walkIn,
       placeFrom,
       shootAt,
+      doorsOn,
+      doorAt,
       launches,
       witness,
       stats: { ...this.stats, ms: now() - t0 },
