@@ -286,23 +286,41 @@ export function drawBody(ctx, b, i, ts) {
   const y = b.y * ts;
   const w = PHYS.w * ts;
   const h = PHYS.h * ts;
-  ctx.fillStyle = COLORS.portal[i];
+  const HEAD = '#f1d2b0';
   ctx.strokeStyle = '#111';
   ctx.lineWidth = 2;
+  ctx.font = `bold ${Math.max(8, ts * 0.24)}px sans-serif`;
   if (b.mode === MARIO) {
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
+    // Side view (XY): head on top, body below, feet on the ground.
+    const r = w * 0.24;
+    const bodyTop = y + r * 1.6;
+    ctx.fillStyle = COLORS.portal[i];
+    ctx.fillRect(x + w * 0.12, bodyTop, w * 0.76, y + h - bodyTop);
+    ctx.strokeRect(x + w * 0.12, bodyTop, w * 0.76, y + h - bodyTop);
     ctx.fillStyle = '#111';
-    ctx.fillRect(x, y + h - 3, w, 3); // feet: gravity points down
+    ctx.fillRect(x + w * 0.12, y + h - 3, w * 0.76, 3);
+    ctx.fillStyle = HEAD;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + r, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#111';
+    ctx.fillText('AB'[i], x + w / 2 - ts * 0.07, y + h - ts * 0.1);
   } else {
+    // Top-down view (XZ): shoulders seen from above with the head in the middle.
+    ctx.fillStyle = COLORS.portal[i];
     ctx.beginPath();
     ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    ctx.fillStyle = HEAD;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, w * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#111';
+    ctx.fillText('AB'[i], x + w / 2 - ts * 0.07, y + h / 2 + ts * 0.08);
   }
-  ctx.fillStyle = '#111';
-  ctx.font = `bold ${Math.max(9, ts * 0.32)}px sans-serif`;
-  ctx.fillText('AB'[i], x + w * 0.3, y + h * 0.68);
   // Facing direction: a triangle just outside the body.
   if (b.facing) {
     const { x: fx, y: fy } = b.facing;
