@@ -1,7 +1,7 @@
 // Real-time gameplay state: two characters, two portals, shared geometry.
 // Used by the playable game and by solution replay.
 
-import { FLOOR_SOCKET } from './level.js';
+import { FLOOR_SOCKET, WALL } from './level.js';
 import { PHYS, ZELDA, MARIO, bodyAtCell, stepBody, centerCell, supportCell } from './physics.js';
 import { pairActive, partner, transitionMode, exitBody } from './portals.js';
 
@@ -13,7 +13,8 @@ export class Game {
 
   reset() {
     const L = this.level;
-    this.chars = [L.startA, L.startB].map((p, i) => ({ id: i, body: bodyAtCell(p.x, p.y, ZELDA), touch: null }));
+    // facing: last direction the player pushed (for drawing, and later aiming).
+    this.chars = [L.startA, L.startB].map((p, i) => ({ id: i, body: bodyAtCell(p.x, p.y, ZELDA), touch: null, facing: { x: i === 0 ? 1 : -1, y: 0 } }));
     this.portals = [-1, -1];
     this.frame = 0;
     this.won = false;
@@ -40,6 +41,23 @@ export class Game {
     return best;
   }
 
+  // Why the character cannot place a portal right now (for player feedback).
+  whyCannotPlace(ci) {
+    const L = this.level;
+    const b = this.chars[ci].body;
+    const cc = centerCell(b);
+    const here = L.sockets.map((s, sid) => ({ s, sid })).filter(({ s }) => {
+      const a = L.accessCell(s);
+      return a.x === cc.x && a.y === cc.y;
+    });
+    if (!here.length) return 'No portal socket here. Portals only go on the outlined sockets.';
+    if (b.mode === MARIO && !b.grounded) return 'Land first: you cannot place a portal in mid-air.';
+    if (b.mode === MARIO && here.every(({ s }) => s.type === FLOOR_SOCKET)) return 'Floor sockets only work in top-down mode.';
+    if (here.every(({ sid }) => sid === this.portals[1 - ci])) return "That socket holds the other player's portal.";
+    if (here.every(({ sid }) => sid === this.portals[ci])) return 'Your portal is already here.';
+    return 'Cannot place a portal here.';
+  }
+
   placePortal(ci, sid = this.placeableSocket(ci)) {
     if (sid < 0) return false;
     if (sid === this.portals[1 - ci]) return false;
@@ -64,6 +82,8 @@ export class Game {
     if (mode === null) return false;
     const from = ch.body.mode;
     ch.body = exitBody(this.level, exit, mode);
+    const out = this.level.sockets[exit];
+    if (out.type === WALL) ch.facing = { x: out.n, y: 0 };
     this.events.push({ frame: this.frame, type: 'teleport', c: ci, socket: entrySid, exit, fromMode: from, toMode: mode });
     return true;
   }
@@ -74,7 +94,15 @@ export class Game {
     const ev = { touch: null };
     this.chars.forEach((ch, ci) => {
       const before = centerCell(ch.body);
-      stepBody(L, ch.body, inputs[ci] || {}, ev);
+      const inp = inputs[ci] || {};
+      const mx = inp.mx || 0;
+      const my = inp.my || 0;
+      if (ch.body.mode === MARIO) {
+        if (mx) ch.facing = { x: Math.sign(mx), y: 0 };
+      } else if (mx || my) {
+        ch.facing = Math.abs(mx) >= Math.abs(my) ? { x: Math.sign(mx), y: 0 } : { x: 0, y: Math.sign(my) };
+      }
+      stepBody(L, ch.body, inp, ev);
       ch.touch = ev.touch;
       if (!this.active()) return;
       if (ev.touch) {
@@ -120,7 +148,7 @@ export class Game {
   snapshot() {
     return {
       frame: this.frame,
-      bodies: this.chars.map((c) => ({ x: c.body.x, y: c.body.y, mode: c.body.mode, grounded: c.body.grounded })),
+      bodies: this.chars.map((c) => ({ x: c.body.x, y: c.body.y, mode: c.body.mode, grounded: c.body.grounded, facing: c.facing })),
       portals: this.portals.slice(),
     };
   }

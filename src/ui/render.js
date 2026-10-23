@@ -22,7 +22,7 @@ function hue(i, a = 1) {
 }
 
 export function drawLevel(ctx, level, ts, opts = {}) {
-  const { analysis, overlays = {}, portals = [-1, -1], bodies = null, selectedEdge = -1, hover = null } = opts;
+  const { analysis, overlays = {}, portals = [-1, -1], bodies = null, selectedEdge = -1, hover = null, hints = [], flash = null } = opts;
   const W = level.width;
   const H = level.height;
   ctx.save();
@@ -132,36 +132,82 @@ export function drawLevel(ctx, level, ts, opts = {}) {
     drawPath(w.path, '#ffe14d', 3);
   }
 
-  // Sockets and portals.
+  // Sockets (faint outlines) and placed portals (solid, in the owner's colour).
   const active = pairActive(level, portals[0], portals[1]);
   level.sockets.forEach((s, sid) => {
     const owner = portals[0] === sid ? 0 : portals[1] === sid ? 1 : -1;
     const color = owner >= 0 ? COLORS.portal[owner] : COLORS.socket;
+    ctx.save();
     if (s.type === WALL) {
       const fx = (s.n > 0 ? s.x + 1 : s.x) * ts;
-      const th = Math.max(4, ts * 0.16);
-      ctx.fillStyle = owner >= 0 ? color : 'rgba(232,232,240,0.35)';
-      ctx.fillRect(s.n > 0 ? fx - th : fx, s.y * ts + ts * 0.1, th, ts * 0.8);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      if (owner >= 0 && !active) ctx.setLineDash([3, 3]);
-      ctx.strokeRect(s.n > 0 ? fx - th : fx, s.y * ts + ts * 0.1, th, ts * 0.8);
-      ctx.setLineDash([]);
-    } else {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = owner >= 0 ? 3 : 2;
-      if (owner >= 0 && !active) ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.ellipse((s.x + 0.5) * ts, (s.y + 0.5) * ts, ts * 0.36, ts * 0.3, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (owner >= 0) {
-        ctx.fillStyle = active ? color : 'rgba(0,0,0,0.25)';
-        ctx.globalAlpha = 0.45;
+      if (owner < 0) {
+        const th = Math.max(3, ts * 0.1);
+        ctx.strokeStyle = 'rgba(232,232,240,0.7)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(s.n > 0 ? fx - th : fx, s.y * ts + ts * 0.12, th, ts * 0.76);
+      } else {
+        // A portal is an upright oval on the wall face, opening towards the access cell.
+        const cx = fx + s.n * ts * 0.06;
+        const cy = (s.y + 0.5) * ts;
+        if (active) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = ts * 0.4;
+        }
+        // Placed but not yet connected: solid colour, no glow, slightly faded.
+        ctx.fillStyle = color;
+        ctx.globalAlpha = active ? 1 : 0.7;
+        ctx.strokeStyle = active ? color : '#111';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, ts * 0.16, ts * 0.46, 0, 0, Math.PI * 2);
         ctx.fill();
+        ctx.stroke();
         ctx.globalAlpha = 1;
+        if (active) {
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, ts * 0.06, ts * 0.3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else {
+      const cx = (s.x + 0.5) * ts;
+      const cy = (s.y + 0.5) * ts;
+      if (owner < 0) {
+        ctx.strokeStyle = 'rgba(232,232,240,0.7)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, ts * 0.36, ts * 0.28, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // A floor portal is a hole in the floor ringed in the owner's colour.
+        if (active) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = ts * 0.4;
+        }
+        // Placed but not yet connected: solid colour, no glow, slightly faded.
+        ctx.fillStyle = color;
+        ctx.globalAlpha = active ? 1 : 0.7;
+        ctx.strokeStyle = active ? color : '#111';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, ts * 0.42, ts * 0.34, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (active) {
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#0b0b14';
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, ts * 0.26, ts * 0.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
+    ctx.restore();
     if (overlays.ids) {
       ctx.fillStyle = '#fff';
       ctx.font = `${Math.max(9, ts * 0.28)}px sans-serif`;
@@ -169,6 +215,32 @@ export function drawLevel(ctx, level, ts, opts = {}) {
       ctx.fillText(`s${sid}`, a.x * ts + 2, a.y * ts + ts * 0.3);
     }
   });
+
+  // "You can place a portal here" prompts: pulse the socket in the player's colour.
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 150);
+  for (const { sid, c, key } of hints) {
+    const sk = level.sockets[sid];
+    const a = level.accessCell(sk);
+    ctx.strokeStyle = COLORS.portal[c];
+    ctx.lineWidth = 2 + 2 * pulse;
+    if (sk.type === WALL) {
+      const fx = (sk.n > 0 ? sk.x + 1 : sk.x) * ts;
+      ctx.strokeRect(fx - ts * 0.15, sk.y * ts + 2, ts * 0.3, ts - 4);
+    } else {
+      ctx.beginPath();
+      ctx.ellipse((sk.x + 0.5) * ts, (sk.y + 0.5) * ts, ts * 0.45, ts * 0.38, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.font = `bold ${Math.max(10, ts * 0.3)}px sans-serif`;
+    const label = `[${key}]`;
+    const tw = ctx.measureText(label).width;
+    const lx = (a.x + 0.5) * ts - tw / 2;
+    const ly = a.y * ts - 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(lx - 3, ly - ts * 0.3, tw + 6, ts * 0.36);
+    ctx.fillStyle = COLORS.portal[c];
+    ctx.fillText(label, lx, ly);
+  }
 
   // Start markers when no bodies are shown.
   const starts = [level.startA, level.startB];
@@ -186,6 +258,19 @@ export function drawLevel(ctx, level, ts, opts = {}) {
     });
   } else {
     bodies.forEach((b, i) => drawBody(ctx, b, i, ts));
+  }
+
+  // Message above a player after pressing the place key.
+  if (flash && bodies) {
+    const b = bodies[flash.c];
+    ctx.font = `${Math.max(11, ts * 0.28)}px sans-serif`;
+    const w = ctx.measureText(flash.text).width;
+    const x = Math.max(4, Math.min(level.width * ts - w - 4, (b.x + PHYS.w / 2) * ts - w / 2));
+    const y = Math.max(ts * 0.4, b.y * ts - 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(x - 4, y - ts * 0.3, w + 8, ts * 0.4);
+    ctx.fillStyle = flash.ok ? '#9fe6b6' : '#ffd27a';
+    ctx.fillText(flash.text, x, y);
   }
 
   if (hover) {
@@ -218,6 +303,23 @@ export function drawBody(ctx, b, i, ts) {
   ctx.fillStyle = '#111';
   ctx.font = `bold ${Math.max(9, ts * 0.32)}px sans-serif`;
   ctx.fillText('AB'[i], x + w * 0.3, y + h * 0.68);
+  // Facing direction: a triangle just outside the body.
+  if (b.facing) {
+    const { x: fx, y: fy } = b.facing;
+    const cx = x + w / 2 + fx * (w / 2 + ts * 0.06);
+    const cy = y + h / 2 + fy * (h / 2 + ts * 0.06);
+    const s = ts * 0.14;
+    ctx.fillStyle = COLORS.portal[i];
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx + fx * s, cy + fy * s);
+    ctx.lineTo(cx - fy * s - fx * s * 0.2, cy + fx * s - fy * s * 0.2);
+    ctx.lineTo(cx + fy * s - fx * s * 0.2, cy - fx * s - fy * s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
 }
 
 // Approximate body for a solver state (for stepping through a solution).

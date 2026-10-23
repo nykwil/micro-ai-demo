@@ -44,6 +44,12 @@ const S = {
 
 function loadLevel(level, { candidate = null } = {}) {
   S.level = level;
+  // Levels that are not samples (generated, imported, new) show as "Current".
+  const cur = document.getElementById('playLevel');
+  if (cur && cur.options.length) {
+    cur.options[0].textContent = `Current: ${level.name}`;
+    cur.value = 'current';
+  }
   S.candidate = candidate;
   S.undo = [];
   S.analyzer = new MarioAnalyzer();
@@ -323,9 +329,24 @@ $('repairBtn').onclick = () => {
 function startGame() {
   S.game = new Game(S.level);
   S.acc = 0;
+  S.watch = null;
+  S.anim = null;
 }
 
 $('restart').onclick = startGame;
+
+// Play the solver's shortest solution in the real game (scripted inputs, real physics).
+$('watchBtn').onclick = () => {
+  if (S.result.status !== 'solved') {
+    $('playInfo').textContent = 'This level has no solution to watch.';
+    return;
+  }
+  const rp = replaySolution(S.level, S.analysis, S.result, { record: true });
+  S.anim = { frames: rp.frames, i: 0, rp };
+  S.watch = { marks: rp.marks, steps: S.result.actions.map((a) => describeAction(S.level, S.analysis, a)), ok: rp.ok, error: rp.error };
+};
+
+const KEY_LABEL = ['E', 'Enter'];
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && S.tab === 'edit') { e.preventDefault(); undo(); }
@@ -333,15 +354,27 @@ window.addEventListener('keydown', (e) => {
 });
 
 function updatePlayInfo() {
+  if (S.watch && S.anim) {
+    const i = S.anim.i;
+    const step = S.watch.marks.findIndex((m) => m >= i);
+    const lines = S.watch.steps.map((t, k) => `${k === step ? '▶' : k < step || step < 0 ? '✓' : ' '} ${k + 1}. ${t}`);
+    if (!S.watch.ok) lines.push(`\nReplay failed: ${S.watch.error}`);
+    else if (step < 0) lines.push('\nBoth characters walk to the exit.');
+    $('playInfo').textContent = `Watching the shortest solution (real physics, scripted inputs):\n${lines.join('\n')}`;
+    return;
+  }
   const g = S.game;
-  const name = (c) => (c.body.mode === MARIO ? 'Mario' : 'Zelda');
-  const sk = (sid) => (sid < 0 ? '—' : `s${sid} (${S.level.sockets[sid].type})`);
-  $('playInfo').textContent = [
-    `A: ${name(g.chars[0])} mode, portal ${sk(g.portals[0])}`,
-    `B: ${name(g.chars[1])} mode, portal ${sk(g.portals[1])}`,
-    `Portal pair: ${g.active() ? 'active' : 'inactive'}`,
-    g.won ? '\nBoth characters reached the exit!' : '',
-  ].join('\n');
+  const name = (c) => (c.body.mode === MARIO ? 'platformer' : 'top-down');
+  const sk = (sid) => (sid < 0 ? 'not placed' : `on ${S.level.sockets[sid].type} socket ${sid}`);
+  const lines = [0, 1].map((c) => {
+    const can = g.placeableSocket(c);
+    const tip = can >= 0 ? `  → press ${KEY_LABEL[c]} to place here` : '';
+    return `${'AB'[c]}: ${name(g.chars[c])} mode, portal ${sk(g.portals[c])}${tip}`;
+  });
+  lines.push(g.active() ? 'Portals connected: walk into one to come out of the other.' : 'Portals not connected yet: each player needs one placed.');
+  if (g.won) lines.push('\nBoth characters reached the exit!');
+  if (S.flash && performance.now() < S.flash.until) lines.push(`\n${S.flash.text}`);
+  $('playInfo').textContent = lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -456,10 +489,24 @@ SAMPLES.forEach((s, i) => {
   sel.appendChild(o);
 });
 sel.onchange = () => loadSample(Number(sel.value));
+const playSel = $('playLevel');
+const curOpt = document.createElement('option');
+curOpt.value = 'current';
+playSel.appendChild(curOpt);
+SAMPLES.forEach((s, i) => {
+  const o = document.createElement('option');
+  o.value = i;
+  o.textContent = s.name;
+  playSel.appendChild(o);
+});
+playSel.onchange = () => {
+  if (playSel.value !== 'current') loadSample(Number(playSel.value));
+};
 function loadSample(i) {
   const s = SAMPLES[i];
-  sel.value = String(i);
   loadLevel(Level.fromAscii(s.rows, s.name));
+  sel.value = String(i);
+  playSel.value = String(i);
 }
 $('newLevel').onclick = () => {
   const rows = [];
@@ -519,16 +566,31 @@ function frame(now) {
   last = now;
   let bodies = null;
   let portals = [-1, -1];
-  if (S.tab === 'play' && S.game) {
+  let hints = [];
+  if (S.tab === 'play' && S.anim) {
+    const a = S.anim;
+    const f = a.frames[Math.min(a.i, a.frames.length - 1)];
+    bodies = f.bodies;
+    portals = f.portals;
+    a.i += 1;
+    updatePlayInfo();
+    if (a.i >= a.frames.length + 90) startGame();
+    S.dirty = true;
+  } else if (S.tab === 'play' && S.game) {
     S.acc += dt;
     while (S.acc >= 1 / 60) {
       const inp = readInputs();
-      inp.place.forEach((p, i) => p && S.game.placePortal(i));
+      inp.place.forEach((p, i) => {
+        if (!p) return;
+        const ok = S.game.placePortal(i);
+        S.flash = { c: i, text: ok ? `${'AB'[i]} placed a portal.` : S.game.whyCannotPlace(i), until: performance.now() + 2000, ok };
+      });
       if (!S.game.won) S.game.step(inp.moves);
       S.acc -= 1 / 60;
     }
-    bodies = S.game.chars.map((c) => c.body);
+    bodies = S.game.chars.map((c) => ({ ...c.body, facing: c.facing }));
     portals = S.game.portals;
+    hints = [0, 1].map((c) => ({ c, sid: S.game.placeableSocket(c), key: KEY_LABEL[c] })).filter((h) => h.sid >= 0);
     updatePlayInfo();
     S.dirty = true;
   } else if (S.anim) {
@@ -546,7 +608,8 @@ function frame(now) {
   }
   if (S.dirty) {
     const overlays = S.tab === 'play' ? {} : S.overlays;
-    drawLevel(ctx, S.level, S.ts, { analysis: S.analysis, overlays, portals, bodies, selectedEdge: S.selectedEdge, hover: S.tab === 'edit' ? S.hover : null });
+    const flash = S.tab === 'play' && S.flash && performance.now() < S.flash.until ? S.flash : null;
+    drawLevel(ctx, S.level, S.ts, { analysis: S.analysis, overlays, portals, bodies, hints, flash, selectedEdge: S.selectedEdge, hover: S.tab === 'edit' ? S.hover : null });
     S.dirty = S.tab === 'play' || !!S.anim;
   }
   requestAnimationFrame(frame);

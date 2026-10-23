@@ -75,7 +75,11 @@
         </div>
 
         <div class="tab hidden" id="tab-play">
-          <div class="row"><button id="restart">Restart (R)</button></div>
+          <div class="row">
+            <select id="playLevel"></select>
+            <button id="restart">Restart (R)</button>
+            <button id="watchBtn">Watch solution</button>
+          </div>
           <pre id="playInfo"></pre>
           <h2>Controls</h2>
           <table class="controls">
@@ -84,7 +88,16 @@
             <tr><td class="b">B</td><td>Arrows</td><td>Up</td><td>Enter or /</td></tr>
             <tr><td>Pad</td><td>Left stick = A, right stick = B</td><td>Stick up, LT / RT</td><td>LB / RB</td></tr>
           </table>
-          <p class="hint">Stand at a socket (in front of a wall socket, or on a floor socket) to place your portal. Floor → wall switches to Mario mode, wall → floor back to Zelda mode, wall → wall keeps your mode. Get both characters onto the exit.</p>
+          <h2>How portals work</h2>
+          <ul class="hint">
+            <li>Portals are placed by touch, not shot. Sockets are the white outlines: a bar on the side of a wall block, or an oval on a floor tile.</li>
+            <li>Walk up to a socket. When you can place there, the socket pulses in your colour with your key shown; press it. Your portal replaces your previous one.</li>
+            <li>Wall socket: stand on the tile next to it. Floor socket: stand on it (only in top-down mode). In platformer mode you must be standing, not jumping.</li>
+            <li>Once both portals are placed, walk into one (into the wall, or onto the floor oval) to come out of the other.</li>
+            <li>Floor → wall switches you to platformer mode (gravity, jump), wall → floor back to top-down, wall → wall keeps your mode.</li>
+            <li>Get both characters onto the green flag.</li>
+          </ul>
+          <p class="hint"><b>Watch solution</b> plays the shortest solution in the real game: the same physics and controls as above, driven by scripted inputs.</p>
         </div>
 
         <div class="tab hidden" id="tab-generate">
