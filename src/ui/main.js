@@ -371,7 +371,7 @@ $('repairBtn').onclick = () => {
 function startGame() {
   S.game = new Game(S.level);
   S.acc = 0;
-  S.aim = [{ down: false, frames: 0, dir: null }, { down: false, frames: 0, dir: null }];
+  S.aim = [{ down: false, frames: 0, dir: null, lockUp: false }, { down: false, frames: 0, dir: null, lockUp: false }];
   S.shots = [];
   S.watch = null;
   S.anim = null;
@@ -418,6 +418,15 @@ function updateShooting(inp) {
   for (const c of [0, 1]) {
     const a = S.aim[c];
     const held = inp.shoot[c];
+    // After aiming up, Up may still be held when the shot fires. In platformer
+    // mode that would read as a fresh Up (a jump, or a door), so ignore it
+    // until it's let go.
+    if (a.lockUp) {
+      const m = inp.moves[c];
+      if (m.my < -0.5 || m.jump) {
+        if (S.game.chars[c].body.mode === MARIO) inp.moves[c] = { ...m, my: 0, jump: false };
+      } else a.lockUp = false;
+    }
     if (held && !a.down) Object.assign(a, { down: true, frames: 0, dir: null });
     if (!a.down) continue;
     a.frames++;
@@ -426,6 +435,7 @@ function updateShooting(inp) {
     inp.moves[c] = { mx: 0, my: 0, jump: false }; // stand still while aiming
     if (held) continue;
     a.down = false;
+    a.lockUp = true;
     const dir = aimDir(c);
     const before = S.game.chars[c].body.mode;
     const r = S.game.shoot(c, dir);
