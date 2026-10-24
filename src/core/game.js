@@ -102,11 +102,11 @@ export class Game {
   }
 
   // Door the character could go through with Up right now: an active floor
-  // portal in the cell it is standing in (Mario mode), or -1.
+  // portal in the tile its centre is in (Mario mode, standing or in mid-air), or -1.
   doorAt(ci) {
     const L = this.level;
     const b = this.chars[ci].body;
-    if (b.mode !== MARIO || !b.grounded || !this.active()) return -1;
+    if (b.mode !== MARIO || !this.active()) return -1;
     const cc = centerCell(b);
     const sid = L.floorSocket.get(L.idx(cc.x, cc.y));
     if (sid === undefined || !this.portals.includes(sid) || this.disarmed(ci, L.idx(cc.x, cc.y))) return -1;
@@ -114,7 +114,7 @@ export class Game {
   }
 
   // inputs: [{ mx, my, jump }, { mx, my, jump }]. In Mario mode, pressing Up
-  // (my < 0) in front of an active door goes through it instead of jumping.
+  // (my < 0) in front of an active door goes through it; jump is its own button.
   step(inputs) {
     const L = this.level;
     const ev = { touch: null };

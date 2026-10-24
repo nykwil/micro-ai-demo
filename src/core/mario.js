@@ -60,6 +60,7 @@ function trackedEnv(env) {
   return {
     level: env.level,
     rows,
+    doors: (r) => env.doors(r),
     // Analyses run one at a time, so a mask remembers the last tracker that
     // recorded its rows.
     x(Y, dir) {
@@ -88,9 +89,10 @@ export class MarioAnalyzer {
 
   invalidate(level) {
     const changed = diffTiles(this.prevLevel, level);
-    // Which wall faces hold sockets shapes the analysis (touched faces), so a
-    // change to that set starts afresh. Floor sockets do not matter here.
-    const sockets = [...level.faceSocket.keys()].sort((a, b) => a - b).join(',');
+    // Which wall faces hold sockets shapes the analysis (touched faces), and
+    // floor sockets are doors a jump can go through, so a change to either
+    // set starts afresh.
+    const sockets = [...level.faceSocket.keys()].sort((a, b) => a - b).join(',') + '|' + [...level.floorSocket.keys()].sort((a, b) => a - b).join(',');
     const socketsChanged = sockets !== this.prevSockets;
     this.prevSockets = sockets;
     if (changed === null || socketsChanged) {
@@ -134,12 +136,17 @@ export class MarioAnalyzer {
       const sid = level.faceSocket.get(level.faceKey(f[0], f[1], f[2]));
       return sid === undefined ? -1 : sid;
     };
-    // Map an outcome to (destination platform or -1 for a portal face, sockets touched in order).
+    // Map an outcome to (destination platform or -1 for a portal face or a
+    // door, sockets touched in order, and the door's socket for a door).
     const resolve = (o) => {
       const touched = [];
       for (const f of o.touched) {
         const sid = socketOfFace(f);
         if (sid >= 0 && !touched.includes(sid)) touched.push(sid);
+      }
+      if (o.kind === 'door') {
+        const sid = level.floorSocket.get(level.idx(o.cell[0], o.cell[1]));
+        return sid === undefined || !level.socketValid(level.sockets[sid]) ? null : { to: -1, touched, door: sid };
       }
       if (o.kind === 'face') {
         const sid = socketOfFace(o.face);
@@ -158,9 +165,9 @@ export class MarioAnalyzer {
       for (const o of outcomes.values()) {
         const r = resolve(o);
         if (!r || (r.to === pid && !r.touched.length)) continue;
-        const key = `${r.to}|${r.touched.join(',')}`;
+        const key = `${r.to}|${r.door ?? ''}|${r.touched.join(',')}`;
         const e = merged.get(key);
-        if (!e) merged.set(key, { from: pid, to: r.to, touched: r.touched, measure: o.measure, outcome: o });
+        if (!e) merged.set(key, { from: pid, to: r.to, door: r.door, touched: r.touched, measure: o.measure, outcome: o });
         else {
           e.measure += o.measure;
           if (o.measure > e.outcome.measure) e.outcome = o;
@@ -226,9 +233,9 @@ export class MarioAnalyzer {
       for (const o of outcomes.values()) {
         const r = resolve(o);
         if (!r) continue;
-        const key = `${r.to}|${r.touched.join(',')}`;
+        const key = `${r.to}|${r.door ?? ''}|${r.touched.join(',')}`;
         const e = merged.get(key);
-        if (!e) merged.set(key, { sid, to: r.to, touched: r.touched, measure: o.measure, outcome: o, kind: 'launch' });
+        if (!e) merged.set(key, { sid, to: r.to, door: r.door, touched: r.touched, measure: o.measure, outcome: o, kind: 'launch' });
         else {
           e.measure += o.measure;
           if (o.measure > e.outcome.measure) e.outcome = o;

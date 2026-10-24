@@ -288,7 +288,7 @@ function makeRunner(level, analysis, game, record) {
       t = push(c, -s.n, 0);
     } else if (a.via.kind === 'door') {
       marioToDoor(c, a.socket);
-      tick(c, { mx: 0, my: -1, jump: true });
+      tick(c, { mx: 0, my: -1, jump: false });
       t = newTeleport(c);
     } else if (a.via.kind === 'shot') {
       marioToDoor(c, a.socket);

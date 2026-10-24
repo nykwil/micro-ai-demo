@@ -23,11 +23,11 @@ Left and right are mirror images of each other, so the tables below treat them a
 | L/R | walk into the wall face | walk, jump or fly into the face |
 | Top | walk into the north-facing wall | fall onto it or land on it. Standing on a ground portal means falling in. |
 | Bottom | walk into the south-facing wall | jump up into it |
-| Back | step onto the floor tile | **door**: stand in front of it and press **Up**, or shoot it (long hold, no direction) and go straight through. *today* |
+| Back | step onto the floor tile | **door**: press **Up** while your centre is in its tile, standing or in mid-air, or shoot it (long hold, no direction, standing) and go straight through. *today* |
 
 Shooting works the same way in both modes: a long hold with no direction shoots the back face of the tile you're standing in. In XZ that's the floor under you, in XY it's the backdrop behind you. In XY you only shoot while standing.
 
-In front of an active door, Up goes through the door instead of jumping. The jump buttons (Space, Right Shift, LT/RT) still jump there.
+Up never jumps. Each player has two buttons, shoot and jump (Space, Right Shift, LT/RT); jump does nothing in top-down mode yet. So Up works on a door at any moment of a jump.
 
 ## Landing spot
 

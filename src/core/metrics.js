@@ -4,6 +4,7 @@
 import { WALL } from './level.js';
 import { MARIO } from './physics.js';
 import { partner } from './portals.js';
+import { PuzzleModel } from './solver.js';
 
 // A move whose successful landing positions add up to this many variants
 // (eighths of a tile, summed over every speed and jump-hold that works) is
@@ -131,6 +132,71 @@ export function computeMetrics(level, analysis, result, replay = null) {
     navigationFrames: replay ? replay.navFrames : null,
     replayOk: replay ? replay.ok : null,
     endsInMario: states.length ? [states[states.length - 1][0], states[states.length - 1][2]].filter((m) => m === MARIO).length : 0,
+  };
+}
+
+// Shape of the whole state graph, for judging complexity: how many states
+// (nodes) a level has, how many options (distinct next states) each offers,
+// and, along one shortest solution, how many of the options at each step
+// still lead to the exit by a shortest route.
+export function stateGraphStats(analysis, { maxStates = 200000 } = {}) {
+  const model = new PuzzleModel(analysis);
+  const start = model.initialState();
+  const index = new Map([[start.join(), 0]]);
+  const states = [start];
+  const next = [];
+  for (let i = 0; i < states.length; i++) {
+    const out = new Set();
+    for (const { state } of model.successors(states[i])) {
+      const k = state.join();
+      let j = index.get(k);
+      if (j === undefined) {
+        if (states.length >= maxStates) continue;
+        j = states.length;
+        index.set(k, j);
+        states.push(state);
+      }
+      if (j !== i) out.add(j);
+    }
+    next.push([...out]);
+  }
+  // Actions still needed from each state (Infinity: the exit is out of reach).
+  const prev = states.map(() => []);
+  next.forEach((js, i) => js.forEach((j) => prev[j].push(i)));
+  const dist = new Array(states.length).fill(Infinity);
+  const queue = [];
+  states.forEach((st, i) => {
+    if (model.isGoal(st)) {
+      dist[i] = 0;
+      queue.push(i);
+    }
+  });
+  for (let q = 0; q < queue.length; q++) {
+    for (const p of prev[queue[q]]) {
+      if (dist[p] === Infinity) {
+        dist[p] = dist[queue[q]] + 1;
+        queue.push(p);
+      }
+    }
+  }
+  const options = next.map((js) => js.length);
+  const path = [];
+  for (let i = 0; dist[i] > 0 && dist[i] < Infinity; ) {
+    const js = next[i];
+    const forward = js.filter((j) => dist[j] === dist[i] - 1);
+    path.push({ options: js.length, forward: forward.length, dead: js.filter((j) => dist[j] === Infinity).length });
+    i = forward[0];
+  }
+  const winnable = dist.filter((d) => d < Infinity).length;
+  return {
+    complete: states.length < maxStates,
+    minActions: dist[0] === Infinity ? null : dist[0],
+    states: states.length,
+    winnableStates: winnable,
+    transitions: options.reduce((a, b) => a + b, 0),
+    avgOptions: +(options.reduce((a, b) => a + b, 0) / states.length).toFixed(2),
+    maxOptions: Math.max(...options),
+    path,
   };
 }
 

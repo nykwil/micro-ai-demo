@@ -310,8 +310,21 @@ export function makeEnv(level) {
   const yCache = new Map();
   const c0 = -2;
   const c1 = level.width + 1;
+  let doorRows = null;
   return {
     level,
+    // Columns of the floor sockets (doors in Mario mode) in row r.
+    doors(r) {
+      if (!doorRows) {
+        doorRows = new Map();
+        for (const i of level.floorSocket.keys()) {
+          const y = Math.floor(i / level.width);
+          if (!doorRows.has(y)) doorRows.set(y, []);
+          doorRows.get(y).push(i % level.width);
+        }
+      }
+      return doorRows.get(r) || EMPTY;
+    },
     x(Y, dir) {
       // The mask depends only on the rows the body spans and its centre row.
       const r0 = firstRow(Y);
@@ -556,6 +569,8 @@ function groundSet(env, p) {
 //   - positions that bump a ceiling are handed to a fall run for that ceiling
 //     row (every such fall is identical, so one run per row serves them all);
 //   - positions that land are settled with the stick released.
+// At the start of every airborne frame, a body whose centre is in a door's
+// tile can press Up and go through it: that is reported as a door outcome.
 // ---------------------------------------------------------------------------
 
 const keyOf = (touched) => touchedKey(touched);
@@ -579,11 +594,32 @@ function newRun(A, props) {
   return run;
 }
 
+// Door outcomes for the state at the start of frame f (airborne).
+function doorsAt(env, run, f, cur, out) {
+  const Y = run.Ybase + run.prof[f].y0;
+  const cy = Math.floor((Y + H / 2) / SY);
+  const cols = env.doors(cy);
+  if (!cols.length) return;
+  for (const cx of cols) {
+    const range = [cx * S - W / 2, cx * S + S - 1 - W / 2];
+    for (const part of cur.values()) {
+      for (let i = 0; i < NV; i++) {
+        const xs = part.sets[i];
+        if (!xs || !overlaps(xs, range)) continue;
+        const hit = intersect(xs, range);
+        // Witness: the state after frame f - 1 (or the run's start state).
+        out.door([cx, cy], part.touched, hit, hit[0], run, f - 1, i - VMAX);
+      }
+    }
+  }
+}
+
 function airPhase(env, A, run, init, out, fork = null) {
   const prof = run.prof;
   let cur = init;
   for (let f = run.startFrame; cur.size && f < prof.length; f++) {
     if (A.keep) run.frames[f] = cur;
+    if (!(f === 0 && run.startGrounded)) doorsAt(env, run, f, cur, out);
     const grounded = f === 0 && run.startGrounded;
     const airX = !grounded || run.jumped;
     const Y = run.Ybase + prof[f].y0;
@@ -643,11 +679,11 @@ function collector(env, A) {
   const add = (kind, where, touched, n, wit) => {
     // Numeric keys for the common untouched case: cells and faces are small integers.
     const cell = (where[1] + 64) * 512 + (where[0] + 64);
-    const key = touched.length ? `${kind}|${where}|${touchedKey(touched)}` : kind === 'land' ? cell : -1 - (cell * 2 + (where[2] > 0 ? 1 : 0));
+    const key = touched.length || kind === 'door' ? `${kind}|${where}|${touchedKey(touched)}` : kind === 'land' ? cell : -1 - (cell * 2 + (where[2] > 0 ? 1 : 0));
     let o = outcomes.get(key);
     if (!o) {
       o = { kind, touched, measure: 0, witness: { source: A.source, ...wit } };
-      if (kind === 'land') o.cell = where;
+      if (kind === 'land' || kind === 'door') o.cell = where;
       else o.face = where;
       outcomes.set(key, o);
     }
@@ -662,6 +698,9 @@ function collector(env, A) {
     outcomes,
     face(face, touched, list, X, run, f, v, evTouched) {
       add('face', face, touched, measure(list), { run: run.id, f, v, X, evTouched });
+    },
+    door(cell, touched, list, X, run, f, v) {
+      add('door', cell, touched, measure(list), { run: run.id, f, v, X, evTouched: touched });
     },
     landing(xs, v, Y, run, f, touched) {
       ev = { run: run.id, f, v, evTouched: touched };
@@ -856,6 +895,17 @@ export function witnessFor(levelOrEnv, outcome) {
   let v = w.v;
   let touched = w.evTouched;
   for (let guard = 0; guard < 5000; guard++) {
+    if (k < 0) {
+      let root = run;
+      while (root.parent) root = root.parent;
+      if (!root.injections) break;
+      // Start of a fall after a head bump: the bump happened in another run.
+      const inj = root.injections.find((j) => j.v === v && keyOf(j.touched) === keyOf(touched) && inSet(j.list, X));
+      if (!inj) throw new Error('witness: no bump leads here');
+      run = A.runs[inj.run];
+      k = inj.f;
+      continue;
+    }
     const r = stepBack(env, A, run, k, touched, X, v);
     if (!r) throw new Error(`witness: trace-back failed at frame ${k} of run ${run.id}`);
     inputs.push({ mx: r.mx, my: 0, jump: run.prof[k].jump });
@@ -863,18 +913,11 @@ export function witnessFor(levelOrEnv, outcome) {
     v = r.pv;
     touched = r.touched;
     k--;
-    if (k >= 0) continue;
-    let root = run;
-    while (root.parent) root = root.parent;
-    if (!root.injections) break;
-    // Start of a fall after a head bump: the bump happened in another run.
-    const inj = root.injections.find((j) => j.v === v && keyOf(j.touched) === keyOf(touched) && inSet(j.list, X));
-    if (!inj) throw new Error('witness: no bump leads here');
-    run = A.runs[inj.run];
-    k = inj.f;
   }
   if (k !== -1) throw new Error('witness: did not reach the start');
   inputs.reverse();
+  // A door outcome ends by pressing Up in the door's tile.
+  if (outcome.kind === 'door') inputs.push({ mx: 0, my: -1, jump: false });
 
   const groundInputs = [];
   if (A.ground) {
@@ -912,10 +955,12 @@ export function witnessFor(levelOrEnv, outcome) {
 // ground); after the first landing the stick is released. Returns null if the
 // move never leaves the ground or runs out of time, else
 //   { land: { kind: 'land', cell, touched }, faces: [{ kind: 'face', face, touched }] }
-// where touched lists the portal-socket faces met in order, and faces lists
-// every socket face hit while airborne (with the faces met before it). Wall
-// pushes before leaving the ground are not reported (walking into a portal is
-// a separate walk-in action). Used by tests and audits.
+// where touched lists the portal-socket faces met in order, faces lists
+// every socket face hit while airborne (with the faces met before it), and
+// doors lists every door tile the body's centre is in at the start of an
+// airborne frame before the first landing (where Up would take it through).
+// Wall pushes before leaving the ground are not reported (walking into a
+// portal is a separate walk-in action). Used by tests and audits.
 // ---------------------------------------------------------------------------
 
 const RELEASED = Object.freeze({ mx: 0, my: 0, jump: false });
@@ -926,7 +971,13 @@ export function simulateMove(level, body, inputAt, { maxFrames = 1200, path = nu
   const ev = {};
   let touched = [];
   const faces = [];
+  const doors = [];
   for (let f = 0; f < maxFrames; f++) {
+    if (st.airborne && !st.released) {
+      const cx = Math.floor(b.x + PHYS.w / 2);
+      const cy = Math.floor(b.y + PHYS.h / 2);
+      if (level.inBounds(cx, cy) && level.floorSocket.has(level.idx(cx, cy))) doors.push({ kind: 'door', cell: [cx, cy], touched, frame: f });
+    }
     stepBody(level, b, st.released ? RELEASED : inputAt(f, st), ev);
     if (path && f % 2 === 0) path.push([b.x + PHYS.w / 2, b.y + PHYS.h / 2]);
     const leftGround = st.airborne || !b.grounded || ev.airHitX;
@@ -942,7 +993,7 @@ export function simulateMove(level, body, inputAt, { maxFrames = 1200, path = nu
     if (st.released && b.grounded && b.vx === 0) {
       const c = supportCell(level, b);
       if (path) path.push([b.x + PHYS.w / 2, b.y + PHYS.h / 2]);
-      return { land: { kind: 'land', cell: [c.x, c.y], touched }, faces, frames: f + 1 };
+      return { land: { kind: 'land', cell: [c.x, c.y], touched }, faces, doors, frames: f + 1 };
     }
   }
   return null;
@@ -964,10 +1015,10 @@ export function replayWitness(level, wit, startBody, opts) {
 export function runProduces(run, o) {
   if (!run) return false;
   const k = outcomeKey(o);
-  return outcomeKey(run.land) === k || run.faces.some((f) => outcomeKey(f) === k);
+  return outcomeKey(run.land) === k || run.faces.some((f) => outcomeKey(f) === k) || run.doors.some((d) => outcomeKey(d) === k);
 }
 
 export function outcomeKey(o) {
   const t = o.touched.map((u) => u.join(',')).join(';');
-  return o.kind === 'land' ? `land|${o.cell}|${t}` : `face|${o.face}|${t}`;
+  return o.kind === 'face' ? `face|${o.face}|${t}` : `${o.kind}|${o.cell}|${t}`;
 }

@@ -147,7 +147,7 @@ test('random controller input never reaches anything the analysis missed', () =>
       const run = simulateMove(L, body, (f) => ({ mx: seq[Math.floor(f / block) % 120], jump: k >= 0 && f >= k && f <= k + hold }));
       if (!run) continue;
       const have = new Set([...outs.values()].map(outcomeKey));
-      for (const o of [run.land, ...run.faces]) assert.ok(have.has(outcomeKey(o)), `${L.name}: random input reached ${outcomeKey(o)}`);
+      for (const o of [run.land, ...run.faces, ...run.doors]) assert.ok(have.has(outcomeKey(o)), `${L.name}: random input reached ${outcomeKey(o)}`);
     }
   }
 });

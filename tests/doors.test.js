@@ -11,7 +11,8 @@ import { PuzzleModel, exploreAll } from '../src/core/solver.js';
 import { executeAction, gameAtState } from '../src/core/replay.js';
 
 const IDLE = { mx: 0, my: 0, jump: false };
-const UP = { mx: 0, my: -1, jump: true };
+const UP = { mx: 0, my: -1, jump: false };
+const JUMP = { mx: 0, my: 0, jump: true };
 const steps = (g, c, inp, n) => {
   for (let i = 0; i < n; i++) {
     const inputs = [IDLE, IDLE];
@@ -41,10 +42,13 @@ test('door: Up in front of an active door goes through it into top-down mode', (
   g.portals = [1, 0];
   g.chars[0].body = bodyAtCell(5, 2, MARIO);
   steps(g, 0, UP, 1);
-  assert.equal(teleports(g), 0, 'away from the door, Up just jumps');
-  assert.equal(g.chars[0].body.grounded, false);
+  assert.equal(teleports(g), 0, 'away from the door, Up does nothing');
+  assert.equal(g.chars[0].body.grounded, true, 'Up does not jump');
   g.chars[0].body = bodyAtCell(3, 2, MARIO);
-  steps(g, 0, IDLE, 1);
+  steps(g, 0, JUMP, 1);
+  assert.equal(teleports(g), 0, 'the jump button jumps, even in front of a door');
+  assert.equal(g.chars[0].body.grounded, false);
+  // Up in mid-air, still in the door's tile, goes through.
   steps(g, 0, UP, 1);
   assert.equal(teleports(g), 1);
   assert.equal(g.chars[0].body.mode, ZELDA);
@@ -193,5 +197,34 @@ test('sample levels have no fail conditions', async () => {
     const f = findFailures(analyzeLevel(Level.fromAscii(s.rows)));
     assert.ok(f.complete && f.solvable, s.name);
     assert.equal(f.failMoves.length, 0, `${s.name}: ${f.failMoves.length} fail moves`);
+  }
+});
+
+test('door: Up in mid-air goes through a door with no ground under it', () => {
+  // The door at (3,3) is open air below in platformer mode: only a jump reaches it.
+  const L = Level.fromAscii([
+    '#########',
+    ']A.....B#',
+    '#.......#',
+    '#..o....#',
+    '#.......#',
+    '#########',
+  ]);
+  const an = analyzeLevel(L);
+  const pid = an.mario.platformOf[L.idx(3, 4)];
+  assert.ok(!an.mario.doorsOn[pid].includes(1), 'not reachable standing');
+  const model = new PuzzleModel(an);
+  const from = [MARIO, pid, ZELDA, L.idx(7, 1), 1, 0, 0];
+  const via = model.successors(from).filter((x) => x.action.c === 0 && x.action.type === 'enter' && x.action.socket === 1);
+  assert.ok(via.length, 'jump and press Up in the door tile');
+  for (const x of via) {
+    assert.equal(x.state[0], ZELDA);
+    assert.equal(x.state[1], L.idx(1, 1));
+    assert.ok(executeAction(L, an, from, x.action, x.state).ok);
+  }
+  const ex = exploreAll(an);
+  for (const st of ex.states) for (const { state, action } of ex.model.successors(st)) {
+    const r = executeAction(L, an, st, action, state);
+    assert.ok(r.ok, `${JSON.stringify(st)} ${action.type}/${action.via?.kind} -> ${JSON.stringify(state)}: ${r.error}`);
   }
 });

@@ -1,8 +1,9 @@
 // Audit of the exact Mario reachability (see README "Verification").
-//   node scripts/audit-reach.js [levels=6] [randomMovesPerLevel=20000] [allsockets]
+//   node scripts/audit-reach.js [levels=6] [randomMovesPerLevel=20000] [allsockets|alldoors]
 // (1) every outcome's witness must replay to that outcome with the real physics;
 // (2) random analog input must never reach an outcome the analysis missed.
-// 'allsockets' puts a portal socket on every wall face to stress the touched-face bookkeeping.
+// 'allsockets' puts a portal socket on every wall face to stress the touched-face bookkeeping;
+// 'alldoors' puts a floor socket (a door in Mario mode) on every floor tile.
 
 import { Level } from '../src/core/level.js';
 import { buildSkeleton, mutate } from '../src/core/generator.js';
@@ -23,6 +24,16 @@ if (process.argv[4] === 'allsockets') {
     for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) for (const n of [-1, 1]) {
       const s = { type: 'wall', x, y, n };
       if (L.socketValid(s) && L.socketAtFace(x, y, n) < 0) L.sockets.push(s);
+    }
+    L.rebuildIndex();
+  }
+}
+if (process.argv[4] === 'alldoors') {
+  // Stress mid-air door outcomes: a floor socket (a door in Mario mode) on every floor tile.
+  for (const L of levels) {
+    for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) {
+      const s = { type: 'floor', x, y };
+      if (L.socketValid(s) && !L.floorSocket.has(L.idx(x, y))) L.sockets.push(s);
     }
     L.rebuildIndex();
   }
@@ -52,7 +63,7 @@ for (const [li, L] of levels.entries()) {
     const r = simulateMove(L, body, (f, st) => st.airborne ? { mx: seq[Math.floor(f / block) % 120], jump: k >= 0 && f >= k && f <= k + hold } : { mx: gseq[Math.min(29, Math.floor(f / 3))], jump: k >= 0 && f >= k && f <= k + hold });
     if (!r) continue; randHits++;
     const have = new Set([...keys.values()].map(outcomeKey));
-    for (const x of [r.land, ...r.faces]) if (!have.has(outcomeKey(x))) { missed++; if (missed < 6) console.log('MISSED', li, useLaunch ? 'launch' : 'platform', outcomeKey(x)); }
+    for (const x of [r.land, ...r.faces, ...r.doors]) if (!have.has(outcomeKey(x))) { missed++; if (missed < 6) console.log('MISSED', li, useLaunch ? 'launch' : 'platform', outcomeKey(x)); }
   }
 }
 console.log({ levels: levels.length, witnessesOk: wOk, witnessesBad: wBad, randomMoves: randHits, missed, analysisMs: tA, totalS: (Date.now() - t0) / 1000 });

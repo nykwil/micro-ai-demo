@@ -1,9 +1,10 @@
 // Keyboard and gamepad input for the two characters.
 //
-// Keyboard:  A = WASD (W jumps in Mario mode), Space jumps, E shoots
-//            B = arrow keys (Up jumps in Mario mode), Right Shift jumps, Enter or / shoots
-// Up also goes through a door in Mario mode, so the separate jump keys let
-// you jump while standing in front of one.
+// Each player has two buttons, shoot and jump. Jump only does something in
+// Mario mode for now (it is free for a top-down action later). Up does not
+// jump: in Mario mode it goes through a door.
+// Keyboard:  A = WASD, Space jumps, E shoots
+//            B = arrow keys, Right Shift jumps, Enter or / shoots
 // Gamepad:   one pad  -> left stick = A, right stick = B, LB/RB shoot, LT/RT jump
 //            two pads -> each pad's left stick, A button jumps, X shoots
 // The shoot button is reported as held; shots fire on release (see main.js).
@@ -33,8 +34,7 @@ const DEAD = 0.3;
 const dz = (v) => (Math.abs(v) < DEAD ? 0 : v);
 
 function axisInput(x, y, jumpBtn) {
-  // Up doubles as jump so the same stick drives both modes.
-  return { mx: dz(x), my: dz(y), jump: y < -0.5 || !!jumpBtn };
+  return { mx: dz(x), my: dz(y), jump: !!jumpBtn };
 }
 
 export function readInputs() {

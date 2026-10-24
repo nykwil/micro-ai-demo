@@ -419,12 +419,12 @@ function updateShooting(inp) {
     const a = S.aim[c];
     const held = inp.shoot[c];
     // After aiming up, Up may still be held when the shot fires. In platformer
-    // mode that would read as a fresh Up (a jump, or a door), so ignore it
+    // mode that would read as a fresh Up (going through a door), so ignore it
     // until it's let go.
     if (a.lockUp) {
       const m = inp.moves[c];
-      if (m.my < -0.5 || m.jump) {
-        if (S.game.chars[c].body.mode === MARIO) inp.moves[c] = { ...m, my: 0, jump: false };
+      if (m.my < -0.5) {
+        if (S.game.chars[c].body.mode === MARIO) inp.moves[c] = { ...m, my: 0 };
       } else a.lockUp = false;
     }
     if (held && !a.down) Object.assign(a, { down: true, frames: 0, dir: null });

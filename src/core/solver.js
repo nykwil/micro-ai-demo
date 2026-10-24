@@ -113,7 +113,13 @@ export class PuzzleModel {
       // Faces bounding the landing spot are disarmed. A launch only meets them
       // while still on the spot: it starts there, never rises, and cannot turn
       // back into the spot's column before dropping out of its row.
-      const hit = o.touched.find((sid) => (sid === p0 || sid === p1) && this.spot[sid] !== spot);
+      let hit = o.touched.find((sid) => (sid === p0 || sid === p1) && this.spot[sid] !== spot);
+      if (hit === undefined && o.door !== undefined) {
+        // Pressing Up in a door's tile on the way (optional; the launch's other
+        // outcomes cover not pressing it). The door on the landing spot is off.
+        if ((o.door === p0 || o.door === p1) && this.spot[o.door] !== spot) hit = o.door;
+        else return;
+      }
       if (hit === undefined) {
         // A launch that only reaches a portal face does nothing without a portal there.
         if (o.to >= 0) out.push({ mode: MARIO, loc: o.to, chain: [{ launch: li, sid: exitSid }], fresh: this.pocket[o.to] === spot ? 1 : 0 });
@@ -233,7 +239,10 @@ export class PuzzleModel {
       const e = mario.edges[eid];
       const hit = active ? e.touched.find((sid) => sid === p0 || sid === p1) : undefined;
       if (hit !== undefined) enter(hit, { kind: 'jump', edge: eid });
-      else if (e.to >= 0 && e.to !== loc) out.push({ state: withChar(MARIO, e.to, 0), action: { c, type: 'jump', edge: eid, to: e.to } });
+      else if (e.door !== undefined) {
+        // Up in a door's tile mid-jump.
+        if (active && (e.door === p0 || e.door === p1)) enter(e.door, { kind: 'jump', edge: eid });
+      } else if (e.to >= 0 && e.to !== loc) out.push({ state: withChar(MARIO, e.to, 0), action: { c, type: 'jump', edge: eid, to: e.to } });
     }
   }
 }
